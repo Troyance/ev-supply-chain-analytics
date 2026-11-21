@@ -23,7 +23,7 @@ Standard bronze / silver / gold layout, all in `workspace.ev_supply_chain`:
   (late suppliers, a chip shortage, slower asia freight, etc.) — see `notebooks/02b_scenarios.py`
 - **gold** – the tables that actually answer the questions above
 
-Bronze is plain SQL in `sql/`, everything after that is PySpark notebooks in `notebooks/`.
+Bronze and gold are SQL in `sql/`, silver and scenarios are PySpark notebooks in `notebooks/`.
 
 ## Running it
 
