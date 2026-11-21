@@ -1,0 +1,673 @@
+version: 2
+models:
+- name: mart_supplier_scorecard
+  description: 'One row per supplier: reliability, spend, and whether they are getting worse. Use to rank suppliers or find ones that need attention.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: supplier_key
+    data_type: string
+    description: Supplier.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_supplier')
+          field: supplier_key
+    constraints:
+    - type: not_null
+  - name: supplier_id
+    data_type: bigint
+    description: Natural supplier id.
+  - name: supplier_name
+    data_type: string
+    description: Supplier name.
+  - name: country
+    data_type: string
+    description: Country the supplier ships from.
+  - name: region
+    data_type: string
+    description: 'World region the supplier ships from: America, Asia, Europe, Africa, Middle East.'
+  - name: tier
+    data_type: string
+    description: 'Reliability tier based on the 12 months before the latest month: A (97%+ on time), B (90-97%), C (under 90%), Unrated.'
+  - name: delivery_lines
+    data_type: bigint
+    description: PO delivery lines received from this supplier.
+  - name: on_time_lines
+    data_type: bigint
+    description: Delivery lines received on or before the promised date.
+  - name: on_time_rate
+    data_type: double
+    description: Share of all deliveries on time, 0-1. This is the supplier's own grain, so it is safe to show but not to average across suppliers.
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+          max_value: 1
+  - name: on_time_rate_last_12m
+    data_type: double
+    description: On-time rate for orders in the most recent 12 months of data.
+  - name: on_time_rate_prior_12m
+    data_type: double
+    description: On-time rate for orders in the 12 months before that.
+  - name: spend
+    data_type: decimal(18,2)
+    description: Net spend, USD.
+  - name: avg_lead_time_days
+    data_type: double
+    description: Average order-to-receipt days.
+  - name: lead_time_stddev_days
+    data_type: double
+    description: Standard deviation of lead time, days. Drives safety stock.
+  - name: p90_lead_time_days
+    data_type: double
+    description: 90th percentile lead time, days.
+  - name: avg_days_late_when_late
+    data_type: double
+    description: For late deliveries only, average days past the promised date.
+  - name: lateness_trend_days_per_month
+    data_type: double
+    description: Slope of days late over the last 24 months. Around 0 is stable, positive is getting worse.
+  - name: is_declining
+    data_type: boolean
+    description: True when the supplier is getting at least 0.15 days later every month. The early-warning flag.
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - supplier_key
+- name: mart_sourcing_risk
+  description: 'One row per part: how dependent we are on one supplier and how reliable that supplier is. Most auto parts are single-sourced on
+    purpose (tooling is expensive), so the useful flag is single-sourced and tier C.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: part_key
+    data_type: string
+    description: Part.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_part')
+          field: part_key
+    constraints:
+    - type: not_null
+  - name: part_id
+    data_type: bigint
+    description: Natural part id.
+  - name: part_number
+    data_type: string
+    description: 'Part number, prefixed by category: BAT, ELE, WIR, BDY, FST.'
+  - name: part_name
+    data_type: string
+    description: Part description.
+  - name: component_category
+    data_type: string
+    description: Battery materials, Electronics, Wiring & harnesses, Body & chassis, or Fasteners & fittings.
+  - name: top_supplier_key
+    data_type: string
+    description: The supplier most of the spend goes to.
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_supplier')
+          field: supplier_key
+  - name: top_supplier_name
+    data_type: string
+    description: Supplier most of the spend goes to.
+  - name: top_supplier_country
+    data_type: string
+    description: Country of that supplier.
+  - name: top_supplier_region
+    data_type: string
+    description: Region of that supplier.
+  - name: top_supplier_tier
+    data_type: string
+    description: Current tier of that supplier.
+  - name: approved_sources
+    data_type: int
+    description: Number of suppliers set up to supply the part.
+  - name: is_single_sourced
+    data_type: boolean
+    description: True when only one supplier is set up.
+  - name: total_spend
+    data_type: decimal(18,2)
+    description: Total spend on the part, USD.
+  - name: top_supplier_share
+    data_type: double
+    description: Share of the part's spend going to the top supplier, 0-1.
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+          max_value: 1
+  - name: is_high_risk
+    data_type: boolean
+    description: Single-sourced from a tier C supplier.
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - part_key
+- name: mart_spend_by_geography
+  description: One row per supplier country. Sums only, so any ratio (on-time rate, average lead time) can be rebuilt at any level.
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: region
+    data_type: string
+    description: 'World region the supplier ships from: America, Asia, Europe, Africa, Middle East.'
+  - name: country
+    data_type: string
+    description: Country the supplier ships from.
+    data_tests:
+    - not_null
+    constraints:
+    - type: not_null
+  - name: suppliers
+    data_type: bigint
+    description: Suppliers in the country with at least one delivery.
+  - name: delivery_lines
+    data_type: bigint
+    description: PO delivery lines received.
+  - name: on_time_lines
+    data_type: bigint
+    description: Delivery lines received on or before the promised date.
+  - name: spend
+    data_type: decimal(18,2)
+    description: Net spend, USD.
+  - name: lead_time_days_total
+    data_type: bigint
+    description: Sum of order-to-receipt days. Divide by delivery_lines for the average.
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - country
+- name: mart_monthly_supplier_performance
+  description: One row per order month x component category x supplier region. Sums only. The 2021-22 chip shortage shows up in electronics.
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: order_month
+    data_type: date
+    description: First day of the month the orders were placed.
+    data_tests:
+    - not_null
+    constraints:
+    - type: not_null
+  - name: component_category
+    data_type: string
+    description: Battery materials, Electronics, Wiring & harnesses, Body & chassis, or Fasteners & fittings.
+    data_tests:
+    - not_null
+    constraints:
+    - type: not_null
+  - name: supplier_region
+    data_type: string
+    description: Region the supplier ships from.
+    data_tests:
+    - not_null
+    constraints:
+    - type: not_null
+  - name: delivery_lines
+    data_type: bigint
+    description: PO delivery lines received.
+  - name: on_time_lines
+    data_type: bigint
+    description: Delivery lines received on or before the promised date.
+  - name: spend
+    data_type: decimal(18,2)
+    description: Net spend, USD.
+  - name: lead_time_days_total
+    data_type: bigint
+    description: Sum of order-to-receipt days. Divide by delivery_lines for the average.
+  - name: chip_shortage_severity
+    data_type: double
+    description: 0 outside the chip shortage, up to 1 at its worst (april 2022).
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - order_month
+        - component_category
+        - supplier_region
+- name: mart_part_demand_plan
+  description: 'Next 13 weeks of part demand per site from the latest production forecasts. Plants: forecast builds x BOM. Service DC: the service
+    parts forecast.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: forecast_run_key
+    data_type: string
+    description: Forecast run.
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_forecast_run')
+          field: forecast_run_key
+  - name: site_key
+    data_type: string
+    description: Site.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_site')
+          field: site_key
+    constraints:
+    - type: not_null
+  - name: part_key
+    data_type: string
+    description: Part.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_part')
+          field: part_key
+    constraints:
+    - type: not_null
+  - name: site_id
+    data_type: string
+    description: PLT1 (Plant 1 Midwest), PLT2 (Plant 2 Southeast) or SDC1 (Service Parts DC).
+  - name: part_id
+    data_type: bigint
+    description: Natural part id.
+  - name: target_week
+    data_type: date
+    description: Week being forecast (monday).
+    data_tests:
+    - not_null
+    constraints:
+    - type: not_null
+  - name: horizon_weeks
+    data_type: int
+    description: Weeks ahead, 1-13.
+  - name: demand_type
+    data_type: string
+    description: dependent (plant demand from builds x BOM) or independent (service parts).
+  - name: demand_p10
+    data_type: decimal(18,2)
+    description: Low-end weekly demand, units.
+  - name: demand_p50
+    data_type: decimal(18,2)
+    description: Expected weekly demand, units.
+  - name: demand_p90
+    data_type: decimal(18,2)
+    description: High-end weekly demand, units.
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - site_key
+        - part_key
+        - target_week
+- name: mart_buy_signals
+  description: 'Replenishment recommendations, one row per site x part, as of the latest inventory snapshot. Signal says what to do: EXPEDITE,
+    ORDER, OK, EXCESS or NO DEMAND.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: snapshot_date
+    data_type: date
+    description: Inventory snapshot date.
+  - name: site_key
+    data_type: string
+    description: Site.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_site')
+          field: site_key
+    constraints:
+    - type: not_null
+  - name: part_key
+    data_type: string
+    description: Part.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_part')
+          field: part_key
+    constraints:
+    - type: not_null
+  - name: supplier_key
+    data_type: string
+    description: Supplier.
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_supplier')
+          field: supplier_key
+  - name: site_id
+    data_type: string
+    description: PLT1 (Plant 1 Midwest), PLT2 (Plant 2 Southeast) or SDC1 (Service Parts DC).
+  - name: part_id
+    data_type: bigint
+    description: Natural part id.
+  - name: part_number
+    data_type: string
+    description: 'Part number, prefixed by category: BAT, ELE, WIR, BDY, FST.'
+  - name: part_name
+    data_type: string
+    description: Part description.
+  - name: component_category
+    data_type: string
+    description: Battery materials, Electronics, Wiring & harnesses, Body & chassis, or Fasteners & fittings.
+  - name: demand_type
+    data_type: string
+    description: dependent (plant demand from builds x BOM) or independent (service parts).
+  - name: buffer_class
+    data_type: string
+    description: 'Replenishment strategy: JIT, KANBAN, STANDARD or STRATEGIC.'
+  - name: supplier_name
+    data_type: string
+    description: Supplier name.
+  - name: supplier_region
+    data_type: string
+    description: Region the supplier ships from.
+  - name: supplier_tier
+    data_type: string
+    description: Supplier reliability tier right now.
+  - name: daily_run_rate
+    data_type: double
+    description: 'DRR: forecast average daily usage over the next 13 weeks, units.'
+  - name: demand_sd_daily
+    data_type: double
+    description: Standard deviation of daily demand, from the forecast range.
+  - name: planning_lead_time_days
+    data_type: int
+    description: Lead time used for planning, days.
+  - name: lead_time_stddev_days
+    data_type: double
+    description: Lead time variability, days.
+  - name: review_period_days
+    data_type: int
+    description: How often the part is reviewed, days.
+  - name: safety_stock
+    data_type: double
+    description: Buffer units. z x sqrt(LT x demand_sd^2 + (DRR x LT_sd)^2) for STANDARD and STRATEGIC, fixed days of DRR for JIT and KANBAN.
+  - name: safety_stock_days
+    data_type: double
+    description: Safety stock in days of run rate.
+  - name: reorder_point
+    data_type: double
+    description: Order when inventory position drops below this. DRR x (lead time + review) + safety stock.
+  - name: order_up_to
+    data_type: double
+    description: Target inventory position after ordering.
+  - name: on_hand_qty
+    data_type: bigint
+    description: Units on hand.
+  - name: on_order_qty
+    data_type: bigint
+    description: Units on open orders.
+  - name: inventory_position
+    data_type: bigint
+    description: On hand + on order.
+  - name: days_of_cover
+    data_type: double
+    description: Days on-hand stock lasts at the run rate.
+  - name: stockout_before_next_receipt
+    data_type: boolean
+    description: True if on hand runs out before an order placed today could arrive.
+  - name: signal
+    data_type: string
+    description: EXPEDITE (on hand below safety stock), ORDER (below reorder point), EXCESS (over twice the max), OK, NO DEMAND.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - EXPEDITE
+          - ORDER
+          - OK
+          - EXCESS
+          - NO DEMAND
+  - name: suggested_order_qty
+    data_type: bigint
+    description: 'Units to order now: up to the max, at least the MOQ, in whole packs.'
+  - name: suggested_order_value
+    data_type: decimal(18,2)
+    description: Suggested order qty x unit price, USD.
+  - name: expected_receipt_date
+    data_type: date
+    description: When an order placed today should arrive.
+  - name: unit_price
+    data_type: decimal(18,4)
+    description: Price paid per unit to the main supplier, USD.
+  - name: pack_size
+    data_type: bigint
+    description: Order multiple.
+  - name: moq
+    data_type: bigint
+    description: Minimum order quantity.
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - site_key
+        - part_key
+- name: mart_forecast_accuracy
+  description: Latest backtest of each model next to actuals, one row per run x series x origin x target week. Compute WAPE as sum(abs_error)
+    / sum(actual_units) after grouping.
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: forecast_run_key
+    data_type: string
+    description: Forecast run.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_forecast_run')
+          field: forecast_run_key
+    constraints:
+    - type: not_null
+  - name: series_key
+    data_type: string
+    description: Forecast series.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_forecast_series')
+          field: series_key
+    constraints:
+    - type: not_null
+  - name: forecast_type
+    data_type: string
+    description: vehicle_builds or service_parts.
+  - name: model
+    data_type: string
+    description: LightGBM or Naive baseline.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - LightGBM
+          - Naive baseline
+  - name: origin_week
+    data_type: date
+    description: Week the forecast was made from.
+    data_tests:
+    - not_null
+    constraints:
+    - type: not_null
+  - name: target_week
+    data_type: date
+    description: Week being forecast (monday).
+    data_tests:
+    - not_null
+    constraints:
+    - type: not_null
+  - name: horizon_weeks
+    data_type: int
+    description: Weeks ahead, 1-13.
+  - name: site_id
+    data_type: string
+    description: PLT1 (Plant 1 Midwest), PLT2 (Plant 2 Southeast) or SDC1 (Service Parts DC).
+  - name: vehicle_model_id
+    data_type: string
+    description: PU (Pickup), SUV or VAN (Delivery Van).
+  - name: part_id
+    data_type: bigint
+    description: Natural part id.
+  - name: component_category
+    data_type: string
+    description: Battery materials, Electronics, Wiring & harnesses, Body & chassis, or Fasteners & fittings.
+  - name: forecast_p10
+    data_type: decimal(18,2)
+    description: Low end of the forecast range.
+  - name: forecast_p50
+    data_type: decimal(18,2)
+    description: Point forecast.
+  - name: forecast_p90
+    data_type: decimal(18,2)
+    description: High end of the forecast range.
+  - name: actual_units
+    data_type: decimal(18,2)
+    description: What actually happened.
+  - name: abs_error
+    data_type: decimal(18,2)
+    description: abs(forecast_p50 - actual_units).
+  - name: error
+    data_type: decimal(18,2)
+    description: forecast_p50 - actual_units. Positive is over-forecast.
+  - name: within_interval
+    data_type: boolean
+    description: Actual landed between p10 and p90. About 80% of rows should be true. Null for the baseline.
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - forecast_run_key
+        - series_key
+        - origin_week
+        - target_week
+- name: mart_policy_comparison
+  description: What each ordering policy cost over the simulated 52 weeks, one row per site x part x policy. Same demand and same late deliveries
+    for every policy.
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: policy_key
+    data_type: string
+    description: Ordering policy.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_policy')
+          field: policy_key
+    constraints:
+    - type: not_null
+  - name: site_key
+    data_type: string
+    description: Site.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_site')
+          field: site_key
+    constraints:
+    - type: not_null
+  - name: part_key
+    data_type: string
+    description: Part.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_part')
+          field: part_key
+    constraints:
+    - type: not_null
+  - name: policy_id
+    data_type: string
+    description: current, lean, high_service, eoq, ddmrp or mrp.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - current
+          - lean
+          - high_service
+          - eoq
+          - ddmrp
+          - mrp
+  - name: policy_name
+    data_type: string
+    description: Display name.
+  - name: site_id
+    data_type: string
+    description: PLT1 (Plant 1 Midwest), PLT2 (Plant 2 Southeast) or SDC1 (Service Parts DC).
+  - name: part_id
+    data_type: bigint
+    description: Natural part id.
+  - name: part_number
+    data_type: string
+    description: 'Part number, prefixed by category: BAT, ELE, WIR, BDY, FST.'
+  - name: part_name
+    data_type: string
+    description: Part description.
+  - name: component_category
+    data_type: string
+    description: Battery materials, Electronics, Wiring & harnesses, Body & chassis, or Fasteners & fittings.
+  - name: buffer_class
+    data_type: string
+    description: 'Replenishment strategy: JIT, KANBAN, STANDARD or STRATEGIC.'
+  - name: supplier_region
+    data_type: string
+    description: Region the supplier ships from.
+  - name: demand_units
+    data_type: decimal(18,2)
+    description: Units needed over the year.
+  - name: short_units
+    data_type: decimal(18,2)
+    description: Units that could not be supplied from stock.
+  - name: stockout_days
+    data_type: bigint
+    description: Days with any shortage.
+  - name: had_stockout
+    data_type: boolean
+    description: True if the part ran short at least once. The headline service KPI.
+  - name: orders_placed
+    data_type: bigint
+    description: Orders placed.
+  - name: avg_inventory_value
+    data_type: decimal(18,2)
+    description: Average stock on hand, USD.
+  - name: holding_cost
+    data_type: decimal(18,2)
+    description: 25% a year of inventory value, USD.
+  - name: ordering_cost
+    data_type: decimal(18,2)
+    description: $50 per JIT release, $150 local, $1,200 overseas, USD.
+  - name: shortage_cost
+    data_type: decimal(18,2)
+    description: Plants $400 per missing part per vehicle, service DC $25 + unit cost per backorder, USD.
+  - name: total_cost
+    data_type: decimal(18,2)
+    description: Holding + ordering + shortage, USD.
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - policy_key
+        - site_key
+        - part_key

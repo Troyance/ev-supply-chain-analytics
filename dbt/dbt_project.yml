@@ -25,6 +25,9 @@ models:
       +materialized: table
       intermediate:
         +materialized: view
+    marts:
+      +schema: ev_marts
+      +materialized: table
 
 seeds:
   ev_supply_chain:

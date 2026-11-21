@@ -1325,6 +1325,71 @@ models:
     - part_key
     - sim_date_key
     warn_unenforced: false
+- name: bridge_vehicle_model_part
+  description: The BOM. Bridge between vehicle models and parts with quantity per vehicle.
+  config:
+    contract:
+      enforced: true
+  constraints:
+  - type: primary_key
+    name: pk_bridge_vehicle_model_part
+    columns:
+    - vehicle_model_key
+    - part_key
+    warn_unenforced: false
+  columns:
+  - name: vehicle_model_key
+    data_type: string
+    description: Vehicle model.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_bridge_vehicle_model_part_vehicle_model_key
+      to: ref('dim_vehicle_model')
+      to_columns:
+      - vehicle_model_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_vehicle_model')
+          field: vehicle_model_key
+  - name: part_key
+    data_type: string
+    description: Part.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_bridge_vehicle_model_part_part_key
+      to: ref('dim_part')
+      to_columns:
+      - part_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_part')
+          field: part_key
+  - name: vehicle_model_id
+    data_type: string
+    description: Vehicle model id.
+  - name: part_id
+    data_type: bigint
+    description: Part id.
+  - name: qty_per_vehicle
+    data_type: int
+    description: How many of the part go into one vehicle.
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 1
+          max_value: 200
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - vehicle_model_key
+        - part_key
 unit_tests:
 - name: tier_uses_only_prior_months
   description: A month's tier is judged on the 12 months before it, and suppliers need 20 deliveries of history to be rated.
