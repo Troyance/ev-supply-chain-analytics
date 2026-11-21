@@ -177,6 +177,53 @@
      "expression": "SUM(`suggested_order_value`)"
     }
    ]
+  },
+  {
+   "name": "ds_policy",
+   "displayName": "Policy comparison",
+   "queryLines": [
+    "SELECT site_id, part_id, concat(site_id, ' ', part_number, ' ', part_name) AS part, buffer_class, component_category,\n",
+    "       supplier_region AS region, CASE policy WHEN 'current' THEN 'Current' WHEN 'lean' THEN 'Lean' WHEN 'high_service' THEN 'High service' WHEN 'eoq' THEN 'EOQ' WHEN 'ddmrp' THEN 'DDMRP' ELSE 'MRP (schedule)' END AS policy,\n",
+    "       holding_cost, ordering_cost, shortage_cost, total_cost, avg_inventory_value, units_short, demand_units,\n",
+    "       orders_placed, stockout_days\n",
+    "FROM gold_policy_comparison\n"
+   ],
+   "columns": [
+    {
+     "displayName": "Total Cost",
+     "description": "Holding + ordering + shortage, USD",
+     "expression": "SUM(`total_cost`)"
+    },
+    {
+     "displayName": "Fill Rate",
+     "description": "Share of demand met from stock",
+     "expression": "1 - SUM(`units_short`) / SUM(`demand_units`)"
+    },
+    {
+     "displayName": "Avg Inventory Value",
+     "description": "Average stock on hand, USD",
+     "expression": "SUM(`avg_inventory_value`)"
+    }
+   ]
+  },
+  {
+   "name": "ds_sawtooth",
+   "displayName": "Policy sawtooth",
+   "queryLines": [
+    "SELECT concat(d.site_id, ' ', p.part_number, ' ', p.part_name) AS part, d.day,\n",
+    "       CASE d.policy WHEN 'current' THEN 'Current' WHEN 'lean' THEN 'Lean' WHEN 'high_service' THEN 'High service'\n",
+    "         WHEN 'eoq' THEN 'EOQ' WHEN 'ddmrp' THEN 'DDMRP' ELSE 'MRP (schedule)' END AS policy, d.on_hand, d.unmet\n",
+    "FROM gold_policy_simulation_daily d JOIN dim_part_planning p USING (part_id)\n"
+   ]
+  },
+  {
+   "name": "ds_projection",
+   "displayName": "13-week projection",
+   "queryLines": [
+    "SELECT concat(j.site_id, ' ', p.part_number, ' ', p.part_name) AS part, j.day, j.on_hand, j.reorder_point,\n",
+    "       j.safety_stock, j.order_placed\n",
+    "FROM gold_inventory_projection j JOIN dim_part_planning p USING (part_id)\n"
+   ]
   }
  ],
  "pages": [
@@ -1839,6 +1886,755 @@
       "y": 16,
       "width": 12,
       "height": 8
+     }
+    }
+   ]
+  },
+  {
+   "name": "policies",
+   "displayName": "Ordering policies",
+   "pageType": "PAGE_TYPE_CANVAS",
+   "layoutVersion": "GRID_V1",
+   "layout": [
+    {
+     "widget": {
+      "name": "title-policies",
+      "multilineTextboxSpec": {
+       "lines": [
+        "# Ordering policies\nThe last 52 weeks of real demand replayed under six ordering policies - same demand, same late deliveries, same starting point. Shortages dominate the bill: a vehicle has ~1,300 parts, so 99.7% availability per part is not enough. Plant 2 is ramping, and only schedule-driven MRP keeps up - trailing averages always lag a ramp."
+       ]
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "filter-part",
+      "queries": [
+       {
+        "name": "filter-part_ds_sawtooth",
+        "query": {
+         "datasetName": "ds_sawtooth",
+         "fields": [
+          {
+           "name": "part",
+           "expression": "`part`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "filter-part_ds_projection",
+        "query": {
+         "datasetName": "ds_projection",
+         "fields": [
+          {
+           "name": "part",
+           "expression": "`part`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "filter-single-select",
+       "encodings": {
+        "fields": [
+         {
+          "fieldName": "part",
+          "displayName": "Part",
+          "queryName": "filter-part_ds_sawtooth"
+         },
+         {
+          "fieldName": "part",
+          "displayName": "Part",
+          "queryName": "filter-part_ds_projection"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Part"
+       },
+       "selection": {
+        "defaultSelection": {
+         "values": {
+          "dataType": "STRING",
+          "values": [
+           {
+            "value": "PLT1 BDY-79568 Fender liner"
+           }
+          ]
+         }
+        }
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 2,
+      "width": 12,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "policy-cost",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_policy",
+         "fields": [
+          {
+           "name": "policy",
+           "expression": "`policy`"
+          },
+          {
+           "name": "sum(holding_cost)",
+           "expression": "SUM(`holding_cost`)"
+          },
+          {
+           "name": "sum(ordering_cost)",
+           "expression": "SUM(`ordering_cost`)"
+          },
+          {
+           "name": "sum(shortage_cost)",
+           "expression": "SUM(`shortage_cost`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "policy",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Policy"
+        },
+        "y": {
+         "scale": {
+          "type": "quantitative"
+         },
+         "format": {
+          "type": "number-currency",
+          "currencyCode": "USD",
+          "abbreviation": "compact",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         },
+         "fields": [
+          {
+           "fieldName": "sum(holding_cost)",
+           "displayName": "Holding"
+          },
+          {
+           "fieldName": "sum(ordering_cost)",
+           "displayName": "Ordering"
+          },
+          {
+           "fieldName": "sum(shortage_cost)",
+           "displayName": "Shortage"
+          }
+         ]
+        }
+       },
+       "frame": {
+        "title": "Annual cost by policy",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 4,
+      "width": 6,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "policy-fill",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_policy",
+         "fields": [
+          {
+           "name": "policy",
+           "expression": "`policy`"
+          },
+          {
+           "name": "measure(Fill Rate)",
+           "expression": "MEASURE(`Fill Rate`)"
+          },
+          {
+           "name": "policy",
+           "expression": "`policy`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "policy",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Policy"
+        },
+        "y": {
+         "fieldName": "measure(Fill Rate)",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Fill rate",
+         "format": {
+          "type": "number-percent",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        },
+        "color": {
+         "fieldName": "policy",
+         "scale": {
+          "type": "categorical",
+          "mappings": [
+           {
+            "value": "Current",
+            "color": "#4E79A7"
+           },
+           {
+            "value": "Lean",
+            "color": "#E15759"
+           },
+           {
+            "value": "High service",
+            "color": "#59A14F"
+           },
+           {
+            "value": "EOQ",
+            "color": "#B07AA1"
+           },
+           {
+            "value": "DDMRP",
+            "color": "#F28E2C"
+           },
+           {
+            "value": "MRP (schedule)",
+            "color": "#76B7B2"
+           }
+          ]
+         },
+         "displayName": "Policy"
+        }
+       },
+       "frame": {
+        "title": "Fill rate by policy",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 6,
+      "y": 4,
+      "width": 3,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "policy-inventory",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_policy",
+         "fields": [
+          {
+           "name": "policy",
+           "expression": "`policy`"
+          },
+          {
+           "name": "measure(Avg Inventory Value)",
+           "expression": "MEASURE(`Avg Inventory Value`)"
+          },
+          {
+           "name": "policy",
+           "expression": "`policy`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "policy",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Policy"
+        },
+        "y": {
+         "fieldName": "measure(Avg Inventory Value)",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Avg inventory",
+         "format": {
+          "type": "number-currency",
+          "currencyCode": "USD",
+          "abbreviation": "compact",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        },
+        "color": {
+         "fieldName": "policy",
+         "scale": {
+          "type": "categorical",
+          "mappings": [
+           {
+            "value": "Current",
+            "color": "#4E79A7"
+           },
+           {
+            "value": "Lean",
+            "color": "#E15759"
+           },
+           {
+            "value": "High service",
+            "color": "#59A14F"
+           },
+           {
+            "value": "EOQ",
+            "color": "#B07AA1"
+           },
+           {
+            "value": "DDMRP",
+            "color": "#F28E2C"
+           },
+           {
+            "value": "MRP (schedule)",
+            "color": "#76B7B2"
+           }
+          ]
+         },
+         "displayName": "Policy"
+        }
+       },
+       "frame": {
+        "title": "Cash tied up in stock",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 9,
+      "y": 4,
+      "width": 3,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "policy-by-site",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_policy",
+         "fields": [
+          {
+           "name": "site_id",
+           "expression": "`site_id`"
+          },
+          {
+           "name": "measure(Total Cost)",
+           "expression": "MEASURE(`Total Cost`)"
+          },
+          {
+           "name": "policy",
+           "expression": "`policy`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "site_id",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Site"
+        },
+        "y": {
+         "fieldName": "measure(Total Cost)",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Total cost",
+         "format": {
+          "type": "number-currency",
+          "currencyCode": "USD",
+          "abbreviation": "compact",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        },
+        "color": {
+         "fieldName": "policy",
+         "scale": {
+          "type": "categorical",
+          "mappings": [
+           {
+            "value": "Current",
+            "color": "#4E79A7"
+           },
+           {
+            "value": "Lean",
+            "color": "#E15759"
+           },
+           {
+            "value": "High service",
+            "color": "#59A14F"
+           },
+           {
+            "value": "EOQ",
+            "color": "#B07AA1"
+           },
+           {
+            "value": "DDMRP",
+            "color": "#F28E2C"
+           },
+           {
+            "value": "MRP (schedule)",
+            "color": "#76B7B2"
+           }
+          ]
+         },
+         "displayName": "Policy"
+        }
+       },
+       "frame": {
+        "title": "Total cost by site and policy",
+        "showTitle": true
+       },
+       "mark": {
+        "layout": "group"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 10,
+      "width": 6,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "policy-by-class",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_policy",
+         "fields": [
+          {
+           "name": "buffer_class",
+           "expression": "`buffer_class`"
+          },
+          {
+           "name": "measure(Total Cost)",
+           "expression": "MEASURE(`Total Cost`)"
+          },
+          {
+           "name": "policy",
+           "expression": "`policy`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "buffer_class",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Buffer class"
+        },
+        "y": {
+         "fieldName": "measure(Total Cost)",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Total cost",
+         "format": {
+          "type": "number-currency",
+          "currencyCode": "USD",
+          "abbreviation": "compact",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        },
+        "color": {
+         "fieldName": "policy",
+         "scale": {
+          "type": "categorical",
+          "mappings": [
+           {
+            "value": "Current",
+            "color": "#4E79A7"
+           },
+           {
+            "value": "Lean",
+            "color": "#E15759"
+           },
+           {
+            "value": "High service",
+            "color": "#59A14F"
+           },
+           {
+            "value": "EOQ",
+            "color": "#B07AA1"
+           },
+           {
+            "value": "DDMRP",
+            "color": "#F28E2C"
+           },
+           {
+            "value": "MRP (schedule)",
+            "color": "#76B7B2"
+           }
+          ]
+         },
+         "displayName": "Policy"
+        }
+       },
+       "frame": {
+        "title": "Total cost by buffer class and policy",
+        "showTitle": true
+       },
+       "mark": {
+        "layout": "group"
+       }
+      }
+     },
+     "position": {
+      "x": 6,
+      "y": 10,
+      "width": 6,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "sawtooth-policies",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_sawtooth",
+         "fields": [
+          {
+           "name": "day",
+           "expression": "`day`"
+          },
+          {
+           "name": "sum(on_hand)",
+           "expression": "SUM(`on_hand`)"
+          },
+          {
+           "name": "policy",
+           "expression": "`policy`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "line",
+       "encodings": {
+        "x": {
+         "fieldName": "day",
+         "scale": {
+          "type": "temporal"
+         },
+         "displayName": "Day"
+        },
+        "y": {
+         "fieldName": "sum(on_hand)",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "On hand (units)"
+        },
+        "color": {
+         "fieldName": "policy",
+         "scale": {
+          "type": "categorical",
+          "mappings": [
+           {
+            "value": "Current",
+            "color": "#4E79A7"
+           },
+           {
+            "value": "Lean",
+            "color": "#E15759"
+           },
+           {
+            "value": "High service",
+            "color": "#59A14F"
+           },
+           {
+            "value": "EOQ",
+            "color": "#B07AA1"
+           },
+           {
+            "value": "DDMRP",
+            "color": "#F28E2C"
+           },
+           {
+            "value": "MRP (schedule)",
+            "color": "#76B7B2"
+           }
+          ]
+         },
+         "displayName": "Policy"
+        }
+       },
+       "frame": {
+        "title": "Sawtooth: on-hand stock for the selected part under each policy",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 16,
+      "width": 12,
+      "height": 7
+     }
+    },
+    {
+     "widget": {
+      "name": "sawtooth-projection",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_projection",
+         "fields": [
+          {
+           "name": "day",
+           "expression": "`day`"
+          },
+          {
+           "name": "sum(on_hand)",
+           "expression": "SUM(`on_hand`)"
+          },
+          {
+           "name": "sum(reorder_point)",
+           "expression": "SUM(`reorder_point`)"
+          },
+          {
+           "name": "sum(safety_stock)",
+           "expression": "SUM(`safety_stock`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "line",
+       "encodings": {
+        "x": {
+         "fieldName": "day",
+         "scale": {
+          "type": "temporal"
+         },
+         "displayName": "Day"
+        },
+        "y": {
+         "scale": {
+          "type": "quantitative"
+         },
+         "fields": [
+          {
+           "fieldName": "sum(on_hand)",
+           "displayName": "On hand"
+          },
+          {
+           "fieldName": "sum(reorder_point)",
+           "displayName": "Reorder point"
+          },
+          {
+           "fieldName": "sum(safety_stock)",
+           "displayName": "Safety stock"
+          }
+         ]
+        }
+       },
+       "frame": {
+        "title": "Next 13 weeks from today's stock (current policy)",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 23,
+      "width": 12,
+      "height": 6
      }
     }
    ]

@@ -56,7 +56,7 @@ params AS (
     p.*,
     pp.part_number, pp.part_name, pp.component_category, pp.supplier_id, pp.supplier_name, pp.supplier_region,
     pp.supplier_tier, pp.unit_cost, pp.buffer_class, pp.planning_lead_time_days,
-    pp.lead_time_stddev_days, pp.review_period_days, pp.service_level_z, pp.pack_size,
+    pp.lead_time_stddev_days, pp.review_period_days, pp.service_level_z, pp.pack_size, pp.moq,
     coalesce(i.snapshot_date, DATE'2026-11-21')                  AS snapshot_date,
     coalesce(i.on_hand_qty, 0)                                   AS on_hand_qty,
     coalesce(i.on_order_qty, 0)                                  AS on_order_qty,
@@ -122,15 +122,17 @@ SELECT
   days_of_cover < planning_lead_time_days          AS stockout_before_next_receipt,
   date_add(snapshot_date, cast(floor(days_of_cover) AS int)) AS projected_stockout_date,
   signal,
+  -- order up to the max, at least the moq, rounded to whole packs
   CASE WHEN signal IN ('ORDER', 'EXPEDITE')
-       THEN cast(ceil((order_up_to - inventory_position) / pack_size) * pack_size AS bigint)
+       THEN cast(greatest(ceil((order_up_to - inventory_position) / pack_size) * pack_size, moq) AS bigint)
        ELSE 0 END                                  AS suggested_order_qty,
   CASE WHEN signal IN ('ORDER', 'EXPEDITE')
-       THEN round(ceil((order_up_to - inventory_position) / pack_size) * pack_size * unit_cost, 2)
+       THEN round(greatest(ceil((order_up_to - inventory_position) / pack_size) * pack_size, moq) * unit_cost, 2)
        ELSE 0 END                                  AS suggested_order_value,
   date_add(snapshot_date, planning_lead_time_days) AS expected_receipt_date,
   unit_cost,
-  pack_size
+  pack_size,
+  moq
 FROM signals;
 
 -- every backtest forecast next to what actually happened, at the lowest grain.

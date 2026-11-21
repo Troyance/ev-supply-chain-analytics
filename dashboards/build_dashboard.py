@@ -100,6 +100,33 @@ datasets = [
      ]},
 ]
 
+
+datasets += [
+    {"name": "ds_policy", "displayName": "Policy comparison",
+     "queryLines": sql(
+         "SELECT site_id, part_id, concat(site_id, ' ', part_number, ' ', part_name) AS part, buffer_class, component_category,",
+         "       supplier_region AS region, CASE policy WHEN 'current' THEN 'Current' WHEN 'lean' THEN 'Lean' WHEN 'high_service' THEN 'High service' WHEN 'eoq' THEN 'EOQ' WHEN 'ddmrp' THEN 'DDMRP' ELSE 'MRP (schedule)' END AS policy,",
+         "       holding_cost, ordering_cost, shortage_cost, total_cost, avg_inventory_value, units_short, demand_units,",
+         "       orders_placed, stockout_days",
+         "FROM gold_policy_comparison"),
+     "columns": [
+         {"displayName": "Total Cost", "description": "Holding + ordering + shortage, USD", "expression": "SUM(`total_cost`)"},
+         {"displayName": "Fill Rate", "description": "Share of demand met from stock", "expression": "1 - SUM(`units_short`) / SUM(`demand_units`)"},
+         {"displayName": "Avg Inventory Value", "description": "Average stock on hand, USD", "expression": "SUM(`avg_inventory_value`)"},
+     ]},
+    {"name": "ds_sawtooth", "displayName": "Policy sawtooth",
+     "queryLines": sql(
+         "SELECT concat(d.site_id, ' ', p.part_number, ' ', p.part_name) AS part, d.day,",
+         "       CASE d.policy WHEN 'current' THEN 'Current' WHEN 'lean' THEN 'Lean' WHEN 'high_service' THEN 'High service'",
+         "         WHEN 'eoq' THEN 'EOQ' WHEN 'ddmrp' THEN 'DDMRP' ELSE 'MRP (schedule)' END AS policy, d.on_hand, d.unmet",
+         "FROM gold_policy_simulation_daily d JOIN dim_part_planning p USING (part_id)")},
+    {"name": "ds_projection", "displayName": "13-week projection",
+     "queryLines": sql(
+         "SELECT concat(j.site_id, ' ', p.part_number, ' ', p.part_name) AS part, j.day, j.on_hand, j.reorder_point,",
+         "       j.safety_stock, j.order_placed",
+         "FROM gold_inventory_projection j JOIN dim_part_planning p USING (part_id)")},
+]
+
 # ---------- widget helpers ----------
 def f(name, expr):
     return {"name": name, "expression": expr}
@@ -293,6 +320,73 @@ def filt(name, kind, field, title, ds_list, p):
                                 "frame": {"showTitle": True, "title": title}}},
             "position": p}
 
+
+# ---------- page 4: ordering policies ----------
+DEFAULT_PART = "PLT1 BDY-79568 Fender liner"
+day = ("day", "`day`", "temporal", "Day")
+POLICY_COLORS = [{"value": "Current", "color": "#4E79A7"}, {"value": "Lean", "color": BAD},
+                 {"value": "High service", "color": GOOD}, {"value": "EOQ", "color": "#B07AA1"},
+                 {"value": "DDMRP", "color": WARN}, {"value": "MRP (schedule)", "color": "#76B7B2"}]
+policies = [
+    text("title-policies", "# Ordering policies\nThe last 52 weeks of real demand replayed under six ordering policies - same demand, same late "
+         "deliveries, same starting point. Shortages dominate the bill: a vehicle has ~1,300 parts, so 99.7% availability per part is not enough. "
+         "Plant 2 is ramping, and only schedule-driven MRP keeps up - trailing averages always lag a ramp.", pos(0, 0, 12, 2)),
+    chart("policy-cost", "bar", "ds_policy",
+          ("policy", "`policy`", "categorical", "Policy"),
+          ("sum(holding_cost)", "SUM(`holding_cost`)", "quantitative", "Cost", USD),
+          "Annual cost by policy", pos(0, 2, 6, 6)),
+    chart("policy-fill", "bar", "ds_policy",
+          ("policy", "`policy`", "categorical", "Policy"),
+          ("measure(Fill Rate)", "MEASURE(`Fill Rate`)", "quantitative", "Fill rate", PCT),
+          "Fill rate by policy", pos(6, 2, 3, 6),
+          color=("policy", "`policy`", "categorical", "Policy", POLICY_COLORS)),
+    chart("policy-inventory", "bar", "ds_policy",
+          ("policy", "`policy`", "categorical", "Policy"),
+          ("measure(Avg Inventory Value)", "MEASURE(`Avg Inventory Value`)", "quantitative", "Avg inventory", USD),
+          "Cash tied up in stock", pos(9, 2, 3, 6),
+          color=("policy", "`policy`", "categorical", "Policy", POLICY_COLORS)),
+    chart("policy-by-site", "bar", "ds_policy",
+          ("site_id", "`site_id`", "categorical", "Site"),
+          ("measure(Total Cost)", "MEASURE(`Total Cost`)", "quantitative", "Total cost", USD),
+          "Total cost by site and policy", pos(0, 8, 6, 6),
+          color=("policy", "`policy`", "categorical", "Policy", POLICY_COLORS),
+          extra_spec={"mark": {"layout": "group"}}),
+    chart("policy-by-class", "bar", "ds_policy",
+          ("buffer_class", "`buffer_class`", "categorical", "Buffer class"),
+          ("measure(Total Cost)", "MEASURE(`Total Cost`)", "quantitative", "Total cost", USD),
+          "Total cost by buffer class and policy", pos(6, 8, 6, 6),
+          color=("policy", "`policy`", "categorical", "Policy", POLICY_COLORS),
+          extra_spec={"mark": {"layout": "group"}}),
+    chart("sawtooth-policies", "line", "ds_sawtooth", day,
+          ("sum(on_hand)", "SUM(`on_hand`)", "quantitative", "On hand (units)"),
+          "Sawtooth: on-hand stock for the selected part under each policy", pos(0, 14, 12, 7),
+          color=("policy", "`policy`", "categorical", "Policy", POLICY_COLORS)),
+    chart("sawtooth-projection", "line", "ds_projection", day,
+          ("sum(on_hand)", "SUM(`on_hand`)", "quantitative", "Units"),
+          "Next 13 weeks from today's stock (current policy)", pos(0, 21, 12, 6)),
+]
+# cost bar: stack the three cost types
+c = policies[1]["widget"]
+c["queries"][0]["query"]["fields"] = [f("policy", "`policy`"), f("sum(holding_cost)", "SUM(`holding_cost`)"),
+                                      f("sum(ordering_cost)", "SUM(`ordering_cost`)"), f("sum(shortage_cost)", "SUM(`shortage_cost`)")]
+c["spec"]["encodings"]["y"] = {"scale": {"type": "quantitative"}, "format": USD, "fields": [
+    {"fieldName": "sum(holding_cost)", "displayName": "Holding"}, {"fieldName": "sum(ordering_cost)", "displayName": "Ordering"},
+    {"fieldName": "sum(shortage_cost)", "displayName": "Shortage"}]}
+# projection: on hand vs reorder point vs safety stock
+pj = policies[7]["widget"]
+pj["queries"][0]["query"]["fields"] = [f("day", "`day`"), f("sum(on_hand)", "SUM(`on_hand`)"),
+                                       f("sum(reorder_point)", "SUM(`reorder_point`)"), f("sum(safety_stock)", "SUM(`safety_stock`)")]
+pj["spec"]["encodings"]["y"] = {"scale": {"type": "quantitative"}, "fields": [
+    {"fieldName": "sum(on_hand)", "displayName": "On hand"}, {"fieldName": "sum(reorder_point)", "displayName": "Reorder point"},
+    {"fieldName": "sum(safety_stock)", "displayName": "Safety stock"}]}
+
+# page-level part picker driving both sawtooth charts
+part_filter = filt("filter-part", "filter-single-select", "part", "Part", ["ds_sawtooth", "ds_projection"], pos(0, 27, 12, 2))
+part_filter["widget"]["spec"]["selection"] = {"defaultSelection": {"values": {"dataType": "STRING", "values": [{"value": DEFAULT_PART}]}}}
+policies.insert(1, {**part_filter, "position": pos(0, 2, 12, 2)})
+for w in policies[2:]:
+    w["position"]["y"] += 2
+
 filters = {"name": "filters", "displayName": "Filters", "pageType": "PAGE_TYPE_GLOBAL_FILTERS", "layoutVersion": "GRID_V1",
            "layout": [
                filt("filter-region", "filter-multi-select", "region", "Supplier region", ["ds_suppliers", "ds_declining", "ds_geo", "ds_signals"], pos(0, 0, 4, 2)),
@@ -303,7 +397,7 @@ filters = {"name": "filters", "displayName": "Filters", "pageType": "PAGE_TYPE_G
 dashboard = {
     "datasets": datasets,
     "pages": [page("suppliers", "Suppliers", suppliers), page("risk", "Sourcing risk", risk),
-              page("planning", "Forecast & buy signals", planning), filters],
+              page("planning", "Forecast & buy signals", planning), page("policies", "Ordering policies", policies), filters],
     "uiSettings": {"theme": {
         "canvasBackgroundColor": {"light": "#F7F8FA", "dark": "#1B2128"},
         "widgetBackgroundColor": {"light": "#FFFFFF", "dark": "#11171C"},

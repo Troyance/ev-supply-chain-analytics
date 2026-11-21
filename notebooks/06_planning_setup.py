@@ -54,7 +54,7 @@ catalog = spark.table(f"{SCHEMA}.dim_part_catalog")
 # MAGIC | class | who | lead time used | service level |
 # MAGIC |---|---|---|---|
 # MAGIC | JIT | body / wiring from nearby (americas) suppliers | transit only | small fixed buffer |
-# MAGIC | KANBAN | fasteners & fittings | transit only | min/max |
+# MAGIC | KANBAN | fasteners & fittings from local suppliers | transit only | min/max |
 # MAGIC | STRATEGIC | battery materials, electronics | full supplier lead time | 99% |
 # MAGIC | STANDARD | everything else | full supplier lead time | 95% |
 
@@ -67,7 +67,7 @@ scorecard = spark.table(f"{SCHEMA}.gold_supplier_scorecard").select(
     "supplier_id", "supplier_name", "region", "avg_lead_time_days", "lead_time_stddev", "tier")
 
 cat, region = F.col("component_category"), F.col("region")
-buffer_class = (F.when(cat == "Fasteners & fittings", "KANBAN")
+buffer_class = (F.when((cat == "Fasteners & fittings") & (region == "America"), "KANBAN")  # kanban needs a short loop
                  .when(cat.isin("Body & chassis", "Wiring & harnesses") & (region == "America"), "JIT")
                  .when(cat.isin("Battery materials", "Electronics"), "STRATEGIC")
                  .otherwise("STANDARD"))
@@ -154,6 +154,38 @@ part_demand = save(plant_usage.unionByName(service), "fct_part_demand_weekly")
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## minimum order quantities
+# MAGIC
+# MAGIC Suppliers don't ship 12 washers. MOQ per part is the biggest of:
+# MAGIC
+# MAGIC - the pack size
+# MAGIC - a minimum order value: $500 from local suppliers, $2,500 from overseas (freight and admin have to be worth it)
+# MAGIC - a minimum days of supply: none for JIT releases, a week locally, two weeks overseas (filling a container)
+# MAGIC
+# MAGIC Days of supply use the last 8 weeks of usage across all sites. Rounded up to the pack size.
+
+# COMMAND ----------
+
+usage_8wk = (part_demand.filter(F.col("week_start") > F.date_sub(F.lit(weeks[-1].date()), 56))
+             .groupBy("part_id").agg((F.sum("units") / 56).alias("drr_all_sites")))
+
+overseas = F.col("supplier_region") != "America"
+moq_raw = F.greatest(
+    F.col("pack_size").cast("double"),
+    F.when(overseas, 2500.0).otherwise(500.0) / F.col("unit_cost").cast("double"),
+    F.coalesce(F.col("drr_all_sites"), F.lit(0.0)) * F.when(F.col("buffer_class") == "JIT", 0)
+        .when(overseas, 14).otherwise(7))
+
+part_planning = save(
+    part_planning.join(usage_8wk, "part_id", "left")
+    .withColumn("moq", (F.ceil(moq_raw / F.col("pack_size")) * F.col("pack_size")).cast("bigint"))
+    .withColumn("moq_days_of_supply", F.round(F.col("moq") / F.col("drr_all_sites"), 1))
+    .drop("drr_all_sites"),
+    "dim_part_planning")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## inventory snapshot
 # MAGIC
 # MAGIC Fake but plausible. A part that is being managed properly sits around its safety stock plus half a
@@ -191,6 +223,8 @@ import json
 result = {t: spark.table(f"{SCHEMA}.{t}").count() for t in
           ["dim_part_planning", "fct_service_demand", "fct_part_demand_weekly", "fct_inventory_snapshot"]}
 result["buffer_classes"] = {r[0]: r[1] for r in part_planning.groupBy("buffer_class").count().collect()}
+result["moq_days_of_supply_median_by_class"] = {r[0]: r[1] for r in part_planning.groupBy("buffer_class")
+    .agg(F.percentile_approx("moq_days_of_supply", 0.5)).collect()}
 result["lead_time_by_class"] = {r[0]: [round(r[1], 1), round(r[2], 1)] for r in part_planning.groupBy("buffer_class")
                                 .agg(F.avg("planning_lead_time_days"), F.avg("lead_time_stddev_days")).collect()}
 print(json.dumps(result, indent=2))
