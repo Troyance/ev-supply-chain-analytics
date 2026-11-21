@@ -1,0 +1,33 @@
+name: ci
+
+# needs three repo secrets: DATABRICKS_HOST, DATABRICKS_TOKEN, DATABRICKS_HTTP_PATH
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: databricks/setup-cli@main
+      - run: databricks bundle validate --strict
+
+  dbt:
+    runs-on: ubuntu-latest
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+      DATABRICKS_HTTP_PATH: ${{ secrets.DATABRICKS_HTTP_PATH }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - run: uv venv -p 3.14 && uv pip install dbt-databricks
+      # builds staging, silver and gold into ci_ schemas from the shared bronze, runs every test and unit test
+      - working-directory: dbt
+        run: |
+          ../.venv/bin/dbt deps
+          ../.venv/bin/dbt build --target ci --profiles-dir ci --exclude tag:simulation

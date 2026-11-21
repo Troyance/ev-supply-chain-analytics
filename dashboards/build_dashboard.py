@@ -1,6 +1,6 @@
 """builds dashboards/supply_chain.json - the ai/bi dashboard. everything reads ev_gold.
 metric views are used directly as datasets, so widgets call MEASURE(`On-Time Rate`) instead of re-implementing it.
-run: python3 dashboards/build_dashboard.py"""
+run: python3 dashboards/build_dashboard.py, then databricks bundle deploy"""
 import json, pathlib
 
 GOLD = "workspace.ev_gold"
@@ -265,6 +265,6 @@ dashboard = {
                        "enablementMode": "ENABLED"}},
 }
 
-out = pathlib.Path(__file__).with_name("supply_chain.json")
+out = pathlib.Path(__file__).with_name("supply_chain.lvdash.json")   # the bundle deploys this file
 out.write_text(json.dumps(dashboard, indent=1))
 print("wrote", out)

@@ -1,0 +1,20 @@
+bundle:
+  name: ev-supply-chain-analytics
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    default: workspace
+  warehouse_id:
+    description: SQL warehouse for sql tasks, dbt and the dashboard
+    default: 20729c7c3db8023a
+
+targets:
+  dev:
+    default: true
+    mode: development
+    presets:
+      name_prefix: ""   # keep the real names instead of "[dev you] ..."
+    # no profile pinned: locally the cli uses your DEFAULT profile, in ci it uses the DATABRICKS_HOST / TOKEN secrets

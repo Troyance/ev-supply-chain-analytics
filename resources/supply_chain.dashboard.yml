@@ -1,0 +1,10 @@
+resources:
+  dashboards:
+    supply_chain:
+      display_name: EV Supply Chain
+      file_path: ../dashboards/supply_chain.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+      dataset_catalog: ${var.catalog}
+      dataset_schema: ev_gold
+      # where it already lives, so deploys update it in place instead of recreating it (and changing its url)
+      parent_path: /Workspace/Users/troyohneck@gmail.com/ev-supply-chain-analytics

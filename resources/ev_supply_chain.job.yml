@@ -1,0 +1,85 @@
+# the whole pipeline as one job. spark writes bronze, dbt builds staging / silver / gold, the simulations read gold
+# and write bronze again, then dbt builds the simulation models on top.
+resources:
+  jobs:
+    ev_supply_chain:
+      name: ev-supply-chain-pipeline
+      max_concurrent_runs: 1
+      schedule:
+        quartz_cron_expression: "0 0 6 ? * MON"   # mondays 6am, once a week's builds are in
+        timezone_id: America/Chicago
+        pause_status: PAUSED                      # turn on when you want it running for real
+
+      environments:
+        - environment_key: spark
+          spec:
+            client: "4"
+        - environment_key: ml
+          spec:
+            client: "4"
+            dependencies: [lightgbm, mlflow]
+        - environment_key: dbt
+          spec:
+            client: "4"
+            dependencies: [dbt-databricks]
+
+      tasks:
+        - task_key: bronze
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../sql/01_bronze.sql
+
+        - task_key: production
+          depends_on: [{task_key: bronze}]
+          environment_key: spark
+          notebook_task: {notebook_path: ../notebooks/03_production.py}
+
+        - task_key: purchasing
+          depends_on: [{task_key: production}]
+          environment_key: spark
+          notebook_task: {notebook_path: ../notebooks/04_purchasing.py}
+
+        - task_key: planning_setup
+          depends_on: [{task_key: purchasing}]
+          environment_key: spark
+          notebook_task: {notebook_path: ../notebooks/06_planning_setup.py}
+
+        - task_key: forecast
+          depends_on: [{task_key: planning_setup}]
+          environment_key: ml
+          notebook_task: {notebook_path: ../notebooks/07_forecast.py}
+
+        - task_key: dbt_build
+          depends_on: [{task_key: forecast}]
+          environment_key: dbt
+          dbt_task:
+            project_directory: ../dbt
+            warehouse_id: ${var.warehouse_id}
+            catalog: ${var.catalog}
+            schema: ev_silver
+            commands:
+              - dbt deps
+              - dbt build --exclude tag:simulation
+
+        - task_key: inventory_projection
+          depends_on: [{task_key: dbt_build}]
+          environment_key: spark
+          notebook_task: {notebook_path: ../notebooks/08b_inventory_projection.py}
+
+        - task_key: policy_simulation
+          depends_on: [{task_key: dbt_build}]
+          environment_key: spark
+          notebook_task: {notebook_path: ../notebooks/08c_policy_simulation.py}
+
+        - task_key: dbt_build_simulation
+          depends_on: [{task_key: inventory_projection}, {task_key: policy_simulation}]
+          environment_key: dbt
+          dbt_task:
+            project_directory: ../dbt
+            warehouse_id: ${var.warehouse_id}
+            catalog: ${var.catalog}
+            schema: ev_silver
+            commands:
+              - dbt deps
+              - dbt build --select tag:simulation
