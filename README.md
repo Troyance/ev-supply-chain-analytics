@@ -19,9 +19,11 @@ Standard bronze / silver / gold layout, all in `workspace.ev_supply_chain`:
 
 - **bronze** – raw copies of the source tables
 - **silver** – cleaned up facts and dimensions
+- **scenarios** – tpch is perfectly uniform, so this adds some realistic mess on top
+  (late suppliers, a chip shortage, slower asia freight, etc.) — see `notebooks/02b_scenarios.py`
 - **gold** – the tables that actually answer the questions above
 
-SQL lives in `sql/`, one file per layer.
+Bronze is plain SQL in `sql/`, everything after that is PySpark notebooks in `notebooks/`.
 
 ## Running it
 
