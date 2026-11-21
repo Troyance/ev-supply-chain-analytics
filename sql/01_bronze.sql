@@ -1,11 +1,7 @@
--- =====================================================================
--- 01_bronze.sql — raw landing layer
--- Copy source tables as-is and add ingestion metadata.
--- Rule: never clean or transform here; bronze is our replayable source of truth.
--- =====================================================================
+-- bronze: raw copies of the tpch sample tables, plus when/where we loaded them from
 
 CREATE SCHEMA IF NOT EXISTS workspace.ev_supply_chain
-  COMMENT 'Learning project: supplier-risk analytics on TPC-H, framed as an EV manufacturer supply chain';
+  COMMENT 'Supply chain analytics side project';
 
 CREATE OR REPLACE TABLE workspace.ev_supply_chain.bronze_supplier AS
 SELECT *, current_timestamp() AS _ingested_at, 'samples.tpch.supplier' AS _source

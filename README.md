@@ -1,47 +1,29 @@
-# EV Supply Chain Analytics
+# ev-supply-chain-analytics
 
-A hands-on Databricks project modeling supplier performance and sourcing risk
-for an electric-vehicle manufacturer.
+Side project for getting hands-on with Databricks. I'm using the TPC-H sample
+data that comes with every workspace and treating it like an EV maker's supply
+chain — suppliers, parts, purchase orders, and shipments with promised vs.
+actual dates.
 
-It uses the TPC-H sample dataset that ships with every Databricks workspace,
-reframed as a supply chain: suppliers, parts, approved supplier–part pairs,
-purchase orders, and PO lines with ship, commit and receipt dates.
+The goal is to answer a few questions I'd expect a supply chain analytics team
+to care about:
 
-## Architecture — medallion layers
+- Which suppliers are late the most, and is it getting worse?
+- What do lead times look like?
+- Which expensive parts are we only buying from one supplier?
+- How much of our spend is concentrated in one country or region?
 
-| Layer  | Purpose | Example tables |
-|--------|---------|----------------|
-| Bronze | Raw copies of source data plus ingestion metadata | `bronze_lineitem`, `bronze_supplier` |
-| Silver | Cleaned, conformed facts and dimensions | `fct_shipments`, `dim_supplier`, `dim_part` |
-| Gold   | Business-ready marts | supplier scorecard, single-source risk, geographic concentration |
+## How it's set up
 
-All tables live in Unity Catalog under `workspace.ev_supply_chain`.
+Standard bronze / silver / gold layout, all in `workspace.ev_supply_chain`:
 
-## Questions the gold layer answers
+- **bronze** – raw copies of the source tables
+- **silver** – cleaned up facts and dimensions
+- **gold** – the tables that actually answer the questions above
 
-- Which suppliers deliver late most often, and is it getting worse?
-- What are average lead times, and how much do they vary, by supplier and shipping mode?
-- Which high-spend parts depend on a single supplier?
-- How concentrated is spend by country and region?
-
-## Repo layout
-
-```
-sql/
-  01_bronze.sql   # raw landing tables
-  02_silver.sql   # (coming) cleaned facts & dimensions
-  03_gold.sql     # (coming) analytics marts
-```
+SQL lives in `sql/`, one file per layer.
 
 ## Running it
 
-Requires the [Databricks CLI](https://docs.databricks.com/dev-tools/cli/) and a SQL warehouse.
-
-```bash
-databricks configure --host https://<your-workspace>.cloud.databricks.com
-databricks experimental aitools tools query -f sql/01_bronze.sql
-```
-
-## Tech
-
-Databricks SQL · Delta Lake · Unity Catalog · serverless SQL warehouse
+You'll need the Databricks CLI configured against a workspace with a SQL
+warehouse. Then run the files in order.
