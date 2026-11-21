@@ -1,228 +1,80 @@
 {
  "datasets": [
   {
-   "name": "ds_suppliers",
-   "displayName": "Suppliers",
-   "queryLines": [
-    "SELECT supplier_id, supplier_name, country, region, tier, po_lines, spend,\n",
-    "       on_time_pct / 100 AS on_time_rate, on_time_pct_recent / 100 AS on_time_rate_recent,\n",
-    "       on_time_pct_prior / 100 AS on_time_rate_prior, avg_lead_time_days, lead_time_stddev,\n",
-    "       lateness_trend_days_per_month, is_declining,\n",
-    "       CASE WHEN is_declining THEN 'Declining' ELSE 'Stable' END AS trend_status,\n",
-    "       on_time_pct * po_lines / 100 AS on_time_lines\n",
-    "FROM gold_supplier_scorecard\n"
-   ],
-   "columns": [
-    {
-     "displayName": "Suppliers",
-     "description": "Number of suppliers",
-     "expression": "COUNT(`supplier_id`)"
-    },
-    {
-     "displayName": "Declining Suppliers",
-     "description": "Suppliers getting 1+ day later per month",
-     "expression": "SUM(CASE WHEN `is_declining` THEN 1 ELSE 0 END)"
-    },
-    {
-     "displayName": "Total Spend",
-     "description": "Net spend, USD",
-     "expression": "SUM(`spend`)"
-    },
-    {
-     "displayName": "On-Time Rate",
-     "description": "Share of PO lines received by the promised date",
-     "expression": "SUM(`on_time_lines`) / SUM(`po_lines`)"
-    }
-   ]
+   "name": "mv_delivery",
+   "displayName": "supplier_delivery_metrics",
+   "asset_name": "workspace.ev_gold.supplier_delivery_metrics"
   },
   {
-   "name": "ds_declining",
-   "displayName": "Declining suppliers",
-   "queryLines": [
-    "SELECT supplier_name, country, region, tier, spend, on_time_pct_prior / 100 AS on_time_prior,\n",
-    "       on_time_pct_recent / 100 AS on_time_recent, lateness_trend_days_per_month\n",
-    "FROM gold_supplier_scorecard WHERE is_declining\n",
-    "ORDER BY lateness_trend_days_per_month DESC\n"
-   ]
+   "name": "mv_risk",
+   "displayName": "sourcing_risk_metrics",
+   "asset_name": "workspace.ev_gold.sourcing_risk_metrics"
   },
   {
-   "name": "ds_monthly",
-   "displayName": "Monthly performance",
-   "queryLines": [
-    "SELECT order_month, component_category, po_lines, spend,\n",
-    "       on_time_pct * po_lines / 100 AS on_time_lines, avg_lead_time_days * po_lines AS lead_days\n",
-    "FROM gold_monthly_performance\n"
-   ],
-   "columns": [
-    {
-     "displayName": "On-Time Rate",
-     "description": "Share of lines on time",
-     "expression": "SUM(`on_time_lines`) / SUM(`po_lines`)"
-    },
-    {
-     "displayName": "Avg Lead Time",
-     "description": "Order-to-receipt days, weighted by lines",
-     "expression": "SUM(`lead_days`) / SUM(`po_lines`)"
-    }
-   ]
+   "name": "mv_planning",
+   "displayName": "inventory_planning_metrics",
+   "asset_name": "workspace.ev_gold.inventory_planning_metrics"
   },
   {
-   "name": "ds_risk",
-   "displayName": "Single-source risk",
+   "name": "mv_accuracy",
+   "displayName": "forecast_accuracy_metrics",
+   "asset_name": "workspace.ev_gold.forecast_accuracy_metrics"
+  },
+  {
+   "name": "mv_policy",
+   "displayName": "policy_simulation_metrics",
+   "asset_name": "workspace.ev_gold.policy_simulation_metrics"
+  },
+  {
+   "name": "ds_scorecard",
+   "displayName": "Supplier scorecard",
    "queryLines": [
-    "SELECT part_id, part_name, component_category, top_supplier_name, top_supplier_country,\n",
-    "       top_supplier_tier, top_supplier_on_time_pct / 100 AS top_supplier_on_time, total_spend,\n",
-    "       top_supplier_share_pct / 100 AS top_supplier_share, is_high_risk,\n",
-    "       CASE WHEN is_high_risk THEN 'High risk (tier C supplier)' ELSE 'Concentrated' END AS risk_level\n",
-    "FROM gold_single_source_risk\n"
-   ],
-   "columns": [
-    {
-     "displayName": "Single-Sourced Parts",
-     "description": "Parts with one supplier at 80%+ of spend",
-     "expression": "COUNT(`part_id`)"
-    },
-    {
-     "displayName": "High-Risk Parts",
-     "description": "Single-sourced from a tier C supplier",
-     "expression": "SUM(CASE WHEN `is_high_risk` THEN 1 ELSE 0 END)"
-    },
-    {
-     "displayName": "Spend at Risk",
-     "description": "Spend on high-risk parts, USD",
-     "expression": "SUM(CASE WHEN `is_high_risk` THEN `total_spend` ELSE 0 END)"
-    }
+    "SELECT supplier_name, country, region, tier, spend, on_time_rate, on_time_rate_prior_12m,\n",
+    "       on_time_rate_last_12m, lateness_trend_days_per_month, is_declining\n",
+    "FROM mart_supplier_scorecard\n"
    ]
   },
   {
    "name": "ds_risk_top",
-   "displayName": "Top high-risk parts",
+   "displayName": "Biggest high-risk parts",
    "queryLines": [
     "SELECT part_number, part_name, component_category, top_supplier_name, top_supplier_country,\n",
-    "       top_supplier_on_time_pct / 100 AS top_supplier_on_time, top_supplier_share_pct / 100 AS share, total_spend\n",
-    "FROM gold_single_source_risk WHERE is_high_risk ORDER BY total_spend DESC LIMIT 200\n"
-   ]
-  },
-  {
-   "name": "ds_geo",
-   "displayName": "Geography",
-   "queryLines": [
-    "SELECT region, country, suppliers, spend, spend_share_pct / 100 AS spend_share,\n",
-    "       avg_lead_time_days * spend AS lead_x_spend\n",
-    "FROM gold_spend_by_geography\n"
-   ],
-   "columns": [
-    {
-     "displayName": "Avg Lead Time",
-     "description": "Spend-weighted order-to-receipt days",
-     "expression": "SUM(`lead_x_spend`) / SUM(`spend`)"
-    }
+    "       top_supplier_region, top_supplier_tier, total_spend\n",
+    "FROM mart_sourcing_risk WHERE is_high_risk ORDER BY total_spend DESC LIMIT 200\n"
    ]
   },
   {
    "name": "ds_builds",
-   "displayName": "Builds: actual + forecast",
+   "displayName": "Build plan",
    "queryLines": [
-    "WITH latest AS (SELECT run_id FROM forecast_run WHERE run_type = 'production' AND forecast_type = 'vehicle_builds'\n",
-    "                ORDER BY created_at DESC LIMIT 1)\n",
-    "SELECT week_start AS week, site_id || ' ' || model_id AS line, units AS actual,\n",
-    "       CAST(NULL AS DOUBLE) AS forecast, CAST(NULL AS DOUBLE) AS forecast_low, CAST(NULL AS DOUBLE) AS forecast_high\n",
-    "FROM fct_vehicle_builds WHERE week_start >= '2024-01-01'\n",
-    "UNION ALL\n",
-    "SELECT target_week, site_id || ' ' || model_id, NULL, forecast_p50, forecast_p10, forecast_p90\n",
-    "FROM fct_forecast JOIN latest USING (run_id)\n"
-   ]
-  },
-  {
-   "name": "ds_accuracy",
-   "displayName": "Forecast accuracy",
-   "queryLines": [
-    "SELECT forecast_type, CASE WHEN model_name = 'naive_mean' THEN 'Naive baseline' ELSE 'LightGBM' END AS model,\n",
-    "       horizon_weeks, abs_error, actual_units\n",
-    "FROM gold_forecast_accuracy\n"
-   ],
-   "columns": [
-    {
-     "displayName": "WAPE",
-     "description": "Weighted absolute percent error",
-     "expression": "SUM(`abs_error`) / SUM(`actual_units`)"
-    }
+    "SELECT week_start, production_line, actual_units, forecast_p50\n",
+    "FROM mart_vehicle_build_plan WHERE week_start >= '2024-01-01'\n"
    ]
   },
   {
    "name": "ds_signals",
    "displayName": "Buy signals",
    "queryLines": [
-    "SELECT site_id, part_id, part_number, part_name, component_category, buffer_class, supplier_name, supplier_region AS region,\n",
-    "       supplier_tier, daily_run_rate, planning_lead_time_days, safety_stock_days, days_of_cover,\n",
-    "       on_hand_qty, on_order_qty, reorder_point, signal, suggested_order_qty, suggested_order_value,\n",
-    "       projected_stockout_date, expected_receipt_date,\n",
+    "SELECT site_id, part_number, part_name, component_category, buffer_class, supplier_name,\n",
+    "       supplier_region, supplier_tier, daily_run_rate, days_of_cover, planning_lead_time_days,\n",
+    "       safety_stock_days, suggested_order_qty, suggested_order_value, signal,\n",
     "       CASE signal WHEN 'EXPEDITE' THEN 1 WHEN 'ORDER' THEN 2 WHEN 'EXCESS' THEN 3 ELSE 4 END AS signal_rank\n",
-    "FROM gold_buy_signals\n"
-   ],
-   "columns": [
-    {
-     "displayName": "Parts to Expedite",
-     "description": "On hand below safety stock",
-     "expression": "SUM(CASE WHEN `signal` = 'EXPEDITE' THEN 1 ELSE 0 END)"
-    },
-    {
-     "displayName": "Parts to Order",
-     "description": "Inventory position below reorder point",
-     "expression": "SUM(CASE WHEN `signal` = 'ORDER' THEN 1 ELSE 0 END)"
-    },
-    {
-     "displayName": "Suggested Order Value",
-     "description": "USD",
-     "expression": "SUM(`suggested_order_value`)"
-    }
-   ]
-  },
-  {
-   "name": "ds_policy",
-   "displayName": "Policy comparison",
-   "queryLines": [
-    "SELECT site_id, part_id, concat(site_id, ' ', part_number, ' ', part_name) AS part, buffer_class, component_category,\n",
-    "       supplier_region AS region, CASE policy WHEN 'current' THEN 'Current' WHEN 'lean' THEN 'Lean' WHEN 'high_service' THEN 'High service' WHEN 'eoq' THEN 'EOQ' WHEN 'ddmrp' THEN 'DDMRP' ELSE 'MRP (schedule)' END AS policy,\n",
-    "       holding_cost, ordering_cost, shortage_cost, total_cost, avg_inventory_value, units_short, demand_units,\n",
-    "       orders_placed, stockout_days\n",
-    "FROM gold_policy_comparison\n"
-   ],
-   "columns": [
-    {
-     "displayName": "Total Cost",
-     "description": "Holding + ordering + shortage, USD",
-     "expression": "SUM(`total_cost`)"
-    },
-    {
-     "displayName": "Fill Rate",
-     "description": "Share of demand met from stock",
-     "expression": "1 - SUM(`units_short`) / SUM(`demand_units`)"
-    },
-    {
-     "displayName": "Avg Inventory Value",
-     "description": "Average stock on hand, USD",
-     "expression": "SUM(`avg_inventory_value`)"
-    }
+    "FROM mart_buy_signals\n"
    ]
   },
   {
    "name": "ds_sawtooth",
    "displayName": "Policy sawtooth",
    "queryLines": [
-    "SELECT concat(d.site_id, ' ', p.part_number, ' ', p.part_name) AS part, d.day,\n",
-    "       CASE d.policy WHEN 'current' THEN 'Current' WHEN 'lean' THEN 'Lean' WHEN 'high_service' THEN 'High service'\n",
-    "         WHEN 'eoq' THEN 'EOQ' WHEN 'ddmrp' THEN 'DDMRP' ELSE 'MRP (schedule)' END AS policy, d.on_hand, d.unmet\n",
-    "FROM gold_policy_simulation_daily d JOIN dim_part_planning p USING (part_id)\n"
+    "SELECT part_label, sim_date, policy_name, on_hand_units FROM mart_policy_daily\n"
    ]
   },
   {
    "name": "ds_projection",
    "displayName": "13-week projection",
    "queryLines": [
-    "SELECT concat(j.site_id, ' ', p.part_number, ' ', p.part_name) AS part, j.day, j.on_hand, j.reorder_point,\n",
-    "       j.safety_stock, j.order_placed\n",
-    "FROM gold_inventory_projection j JOIN dim_part_planning p USING (part_id)\n"
+    "SELECT part_label, projection_date, on_hand_units, reorder_point_units, safety_stock_units\n",
+    "FROM mart_inventory_projection_daily\n"
    ]
   }
  ],
@@ -238,7 +90,7 @@
       "name": "title-suppliers",
       "multilineTextboxSpec": {
        "lines": [
-        "# Supplier performance\nHow reliable the supplier base is, where it is slow, and who is getting worse. Asia takes about 4x longer than north america. Electronics lead times and lateness spiked during the 2021-22 chip shortage."
+        "# Supplier performance\nHow reliable the supplier base is, where it's slow, and who is getting worse. Asia takes about 4x longer than north america. Electronics lead times and lateness spiked during the 2021-22 chip shortage."
        ]
       }
      },
@@ -256,11 +108,11 @@
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_suppliers",
+         "datasetName": "mv_delivery",
          "fields": [
           {
-           "name": "measure(Total Spend)",
-           "expression": "MEASURE(`Total Spend`)"
+           "name": "measure(Spend)",
+           "expression": "MEASURE(`Spend`)"
           }
          ],
          "disaggregated": false
@@ -272,8 +124,8 @@
        "widgetType": "counter",
        "encodings": {
         "value": {
-         "fieldName": "measure(Total Spend)",
-         "displayName": "Total spend",
+         "fieldName": "measure(Spend)",
+         "displayName": "Spend (all time)",
          "format": {
           "type": "number-currency",
           "currencyCode": "USD",
@@ -286,7 +138,7 @@
         }
        },
        "frame": {
-        "title": "Total spend",
+        "title": "Spend (all time)",
         "showTitle": true
        }
       }
@@ -300,12 +152,12 @@
     },
     {
      "widget": {
-      "name": "kpi-ontime",
+      "name": "kpi-otd",
       "queries": [
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_suppliers",
+         "datasetName": "mv_delivery",
          "fields": [
           {
            "name": "measure(On-Time Rate)",
@@ -352,11 +204,11 @@
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_suppliers",
+         "datasetName": "mv_delivery",
          "fields": [
           {
-           "name": "measure(Suppliers)",
-           "expression": "MEASURE(`Suppliers`)"
+           "name": "measure(Active Suppliers)",
+           "expression": "MEASURE(`Active Suppliers`)"
           }
          ],
          "disaggregated": false
@@ -368,20 +220,12 @@
        "widgetType": "counter",
        "encodings": {
         "value": {
-         "fieldName": "measure(Suppliers)",
-         "displayName": "Suppliers",
-         "format": {
-          "type": "number-plain",
-          "abbreviation": "compact",
-          "decimalPlaces": {
-           "type": "max",
-           "places": 1
-          }
-         }
+         "fieldName": "measure(Active Suppliers)",
+         "displayName": "Active suppliers"
         }
        },
        "frame": {
-        "title": "Suppliers",
+        "title": "Active suppliers",
         "showTitle": true
        }
       }
@@ -395,16 +239,16 @@
     },
     {
      "widget": {
-      "name": "kpi-declining",
+      "name": "kpi-lead",
       "queries": [
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_suppliers",
+         "datasetName": "mv_delivery",
          "fields": [
           {
-           "name": "measure(Declining Suppliers)",
-           "expression": "MEASURE(`Declining Suppliers`)"
+           "name": "measure(Avg Lead Time Days)",
+           "expression": "MEASURE(`Avg Lead Time Days`)"
           }
          ],
          "disaggregated": false
@@ -416,12 +260,19 @@
        "widgetType": "counter",
        "encodings": {
         "value": {
-         "fieldName": "measure(Declining Suppliers)",
-         "displayName": "Declining suppliers"
+         "fieldName": "measure(Avg Lead Time Days)",
+         "displayName": "Avg lead time (days)",
+         "format": {
+          "type": "number-plain",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
         }
        },
        "frame": {
-        "title": "Declining suppliers",
+        "title": "Avg lead time (days)",
         "showTitle": true
        }
       }
@@ -435,24 +286,24 @@
     },
     {
      "widget": {
-      "name": "lead-time-trend",
+      "name": "lead-trend",
       "queries": [
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_monthly",
+         "datasetName": "mv_delivery",
          "fields": [
           {
-           "name": "monthly(order_month)",
-           "expression": "DATE_TRUNC(\"MONTH\", `order_month`)"
+           "name": "monthly(Order Month)",
+           "expression": "DATE_TRUNC(\"MONTH\", `Order Month`)"
           },
           {
-           "name": "measure(Avg Lead Time)",
-           "expression": "MEASURE(`Avg Lead Time`)"
+           "name": "measure(Avg Lead Time Days)",
+           "expression": "MEASURE(`Avg Lead Time Days`)"
           },
           {
-           "name": "component_category",
-           "expression": "`component_category`"
+           "name": "Component Category",
+           "expression": "`Component Category`"
           }
          ],
          "disaggregated": false
@@ -464,17 +315,17 @@
        "widgetType": "line",
        "encodings": {
         "x": {
-         "fieldName": "monthly(order_month)",
+         "fieldName": "monthly(Order Month)",
          "scale": {
           "type": "temporal"
          },
          "displayName": "Order month"
         },
         "y": {
-         "fieldName": "measure(Avg Lead Time)",
          "scale": {
           "type": "quantitative"
          },
+         "fieldName": "measure(Avg Lead Time Days)",
          "displayName": "Avg lead time (days)",
          "format": {
           "type": "number-plain",
@@ -485,15 +336,15 @@
          }
         },
         "color": {
-         "fieldName": "component_category",
+         "fieldName": "Component Category",
          "scale": {
           "type": "categorical"
          },
-         "displayName": "Category"
+         "displayName": "Component Category"
         }
        },
        "frame": {
-        "title": "Lead time by component category",
+        "title": "Lead time by component category (order month)",
         "showTitle": true
        },
        "annotations": [
@@ -554,20 +405,20 @@
     },
     {
      "widget": {
-      "name": "lead-by-region",
+      "name": "lead-region",
       "queries": [
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_geo",
+         "datasetName": "mv_delivery",
          "fields": [
           {
-           "name": "region",
-           "expression": "`region`"
+           "name": "Supplier Region",
+           "expression": "`Supplier Region`"
           },
           {
-           "name": "measure(Avg Lead Time)",
-           "expression": "MEASURE(`Avg Lead Time`)"
+           "name": "measure(Avg Lead Time Days)",
+           "expression": "MEASURE(`Avg Lead Time Days`)"
           }
          ],
          "disaggregated": false
@@ -579,17 +430,17 @@
        "widgetType": "bar",
        "encodings": {
         "x": {
-         "fieldName": "region",
+         "fieldName": "Supplier Region",
          "scale": {
           "type": "categorical"
          },
-         "displayName": "Region"
+         "displayName": "Supplier Region"
         },
         "y": {
-         "fieldName": "measure(Avg Lead Time)",
          "scale": {
           "type": "quantitative"
          },
+         "fieldName": "measure(Avg Lead Time Days)",
          "displayName": "Avg lead time (days)",
          "format": {
           "type": "number-plain",
@@ -615,20 +466,24 @@
     },
     {
      "widget": {
-      "name": "ontime-trend",
+      "name": "otd-trend",
       "queries": [
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_monthly",
+         "datasetName": "mv_delivery",
          "fields": [
           {
-           "name": "monthly(order_month)",
-           "expression": "DATE_TRUNC(\"MONTH\", `order_month`)"
+           "name": "monthly(Receipt Month)",
+           "expression": "DATE_TRUNC(\"MONTH\", `Receipt Month`)"
           },
           {
            "name": "measure(On-Time Rate)",
            "expression": "MEASURE(`On-Time Rate`)"
+          },
+          {
+           "name": "Supplier Region",
+           "expression": "`Supplier Region`"
           }
          ],
          "disaggregated": false
@@ -640,18 +495,18 @@
        "widgetType": "line",
        "encodings": {
         "x": {
-         "fieldName": "monthly(order_month)",
+         "fieldName": "monthly(Receipt Month)",
          "scale": {
           "type": "temporal"
          },
-         "displayName": "Order month"
+         "displayName": "Receipt month"
         },
         "y": {
-         "fieldName": "measure(On-Time Rate)",
          "scale": {
           "type": "quantitative"
          },
-         "displayName": "On-time rate",
+         "fieldName": "measure(On-Time Rate)",
+         "displayName": "On-time delivery",
          "format": {
           "type": "number-percent",
           "decimalPlaces": {
@@ -659,10 +514,17 @@
            "places": 1
           }
          }
+        },
+        "color": {
+         "fieldName": "Supplier Region",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Supplier Region"
         }
        },
        "frame": {
-        "title": "On-time delivery over time",
+        "title": "On-time delivery by region",
         "showTitle": true
        }
       }
@@ -676,24 +538,24 @@
     },
     {
      "widget": {
-      "name": "tier-by-region",
+      "name": "spend-tier",
       "queries": [
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_suppliers",
+         "datasetName": "mv_delivery",
          "fields": [
           {
-           "name": "region",
-           "expression": "`region`"
+           "name": "Supplier Region",
+           "expression": "`Supplier Region`"
           },
           {
-           "name": "measure(Suppliers)",
-           "expression": "MEASURE(`Suppliers`)"
+           "name": "measure(Spend)",
+           "expression": "MEASURE(`Spend`)"
           },
           {
-           "name": "tier",
-           "expression": "`tier`"
+           "name": "Supplier Tier",
+           "expression": "`Supplier Tier`"
           }
          ],
          "disaggregated": false
@@ -705,21 +567,30 @@
        "widgetType": "bar",
        "encodings": {
         "x": {
-         "fieldName": "region",
+         "fieldName": "Supplier Region",
          "scale": {
           "type": "categorical"
          },
-         "displayName": "Region"
+         "displayName": "Supplier Region"
         },
         "y": {
-         "fieldName": "measure(Suppliers)",
          "scale": {
           "type": "quantitative"
          },
-         "displayName": "Suppliers"
+         "fieldName": "measure(Spend)",
+         "displayName": "Spend",
+         "format": {
+          "type": "number-currency",
+          "currencyCode": "USD",
+          "abbreviation": "compact",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
         },
         "color": {
-         "fieldName": "tier",
+         "fieldName": "Supplier Tier",
          "scale": {
           "type": "categorical",
           "mappings": [
@@ -734,14 +605,18 @@
            {
             "value": "C",
             "color": "#E15759"
+           },
+           {
+            "value": "Unrated",
+            "color": "#9AA5B1"
            }
           ]
          },
-         "displayName": "Tier"
+         "displayName": "Supplier Tier"
         }
        },
        "frame": {
-        "title": "Supplier tiers by region",
+        "title": "Spend by region and supplier tier at the time of delivery",
         "showTitle": true
        }
       }
@@ -755,12 +630,12 @@
     },
     {
      "widget": {
-      "name": "declining-table",
+      "name": "declining",
       "queries": [
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_declining",
+         "datasetName": "ds_scorecard",
          "fields": [
           {
            "name": "supplier_name",
@@ -779,19 +654,30 @@
            "expression": "`lateness_trend_days_per_month`"
           },
           {
-           "name": "on_time_prior",
-           "expression": "`on_time_prior`"
+           "name": "on_time_rate_prior_12m",
+           "expression": "`on_time_rate_prior_12m`"
           },
           {
-           "name": "on_time_recent",
-           "expression": "`on_time_recent`"
+           "name": "on_time_rate_last_12m",
+           "expression": "`on_time_rate_last_12m`"
           },
           {
            "name": "spend",
            "expression": "`spend`"
           }
          ],
-         "disaggregated": true
+         "disaggregated": true,
+         "orders": [
+          {
+           "direction": "DESC",
+           "expression": "`lateness_trend_days_per_month`"
+          }
+         ],
+         "filters": [
+          {
+           "expression": "`is_declining`"
+          }
+         ]
         }
        }
       ],
@@ -824,7 +710,7 @@
           }
          },
          {
-          "fieldName": "on_time_prior",
+          "fieldName": "on_time_rate_prior_12m",
           "displayName": "On-time (prior 12m)",
           "format": {
            "type": "number-percent",
@@ -835,7 +721,7 @@
           }
          },
          {
-          "fieldName": "on_time_recent",
+          "fieldName": "on_time_rate_last_12m",
           "displayName": "On-time (last 12m)",
           "format": {
            "type": "number-percent",
@@ -861,7 +747,7 @@
         ]
        },
        "frame": {
-        "title": "Declining suppliers (getting 1+ day later every month)",
+        "title": "Declining suppliers (getting later every month)",
         "showTitle": true
        }
       }
@@ -870,7 +756,7 @@
       "x": 0,
       "y": 16,
       "width": 12,
-      "height": 7
+      "height": 6
      }
     }
    ]
@@ -886,7 +772,7 @@
       "name": "title-risk",
       "multilineTextboxSpec": {
        "lines": [
-        "# Sourcing risk\nParts where one supplier gets 80%+ of the spend. High risk means that supplier is also tier C. Most auto parts are single-sourced on purpose, so the question is which ones depend on an unreliable supplier."
+        "# Sourcing risk\nMost auto parts are single-sourced on purpose - tooling is expensive. The risk is depending on a single supplier who isn't reliable: high risk = single-sourced from a tier C supplier."
        ]
       }
      },
@@ -904,7 +790,7 @@
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_risk",
+         "datasetName": "mv_risk",
          "fields": [
           {
            "name": "measure(Single-Sourced Parts)",
@@ -921,15 +807,7 @@
        "encodings": {
         "value": {
          "fieldName": "measure(Single-Sourced Parts)",
-         "displayName": "Single-sourced parts",
-         "format": {
-          "type": "number-plain",
-          "abbreviation": "compact",
-          "decimalPlaces": {
-           "type": "max",
-           "places": 1
-          }
-         }
+         "displayName": "Single-sourced parts"
         }
        },
        "frame": {
@@ -947,12 +825,12 @@
     },
     {
      "widget": {
-      "name": "kpi-highrisk",
+      "name": "kpi-high",
       "queries": [
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_risk",
+         "datasetName": "mv_risk",
          "fields": [
           {
            "name": "measure(High-Risk Parts)",
@@ -969,15 +847,7 @@
        "encodings": {
         "value": {
          "fieldName": "measure(High-Risk Parts)",
-         "displayName": "High-risk parts",
-         "format": {
-          "type": "number-plain",
-          "abbreviation": "compact",
-          "decimalPlaces": {
-           "type": "max",
-           "places": 1
-          }
-         }
+         "displayName": "High-risk parts"
         }
        },
        "frame": {
@@ -995,12 +865,12 @@
     },
     {
      "widget": {
-      "name": "kpi-spend-risk",
+      "name": "kpi-at-risk",
       "queries": [
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_risk",
+         "datasetName": "mv_risk",
          "fields": [
           {
            "name": "measure(Spend at Risk)",
@@ -1044,24 +914,24 @@
     },
     {
      "widget": {
-      "name": "risk-by-category",
+      "name": "risk-cat",
       "queries": [
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_risk",
+         "datasetName": "mv_risk",
          "fields": [
           {
-           "name": "component_category",
-           "expression": "`component_category`"
+           "name": "Component Category",
+           "expression": "`Component Category`"
           },
           {
-           "name": "measure(Single-Sourced Parts)",
-           "expression": "MEASURE(`Single-Sourced Parts`)"
+           "name": "measure(Spend at Risk)",
+           "expression": "MEASURE(`Spend at Risk`)"
           },
           {
-           "name": "risk_level",
-           "expression": "`risk_level`"
+           "name": "Supplier Region",
+           "expression": "`Supplier Region`"
           }
          ],
          "disaggregated": false
@@ -1073,39 +943,38 @@
        "widgetType": "bar",
        "encodings": {
         "x": {
-         "fieldName": "component_category",
+         "fieldName": "Component Category",
          "scale": {
           "type": "categorical"
          },
-         "displayName": "Category"
+         "displayName": "Component Category"
         },
         "y": {
-         "fieldName": "measure(Single-Sourced Parts)",
          "scale": {
           "type": "quantitative"
          },
-         "displayName": "Parts"
+         "fieldName": "measure(Spend at Risk)",
+         "displayName": "Spend at risk",
+         "format": {
+          "type": "number-currency",
+          "currencyCode": "USD",
+          "abbreviation": "compact",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
         },
         "color": {
-         "fieldName": "risk_level",
+         "fieldName": "Supplier Region",
          "scale": {
-          "type": "categorical",
-          "mappings": [
-           {
-            "value": "High risk (tier C supplier)",
-            "color": "#E15759"
-           },
-           {
-            "value": "Concentrated",
-            "color": "#F28E2C"
-           }
-          ]
+          "type": "categorical"
          },
-         "displayName": "Risk"
+         "displayName": "Supplier Region"
         }
        },
        "frame": {
-        "title": "Single-sourced parts by category",
+        "title": "Spend at risk by category",
         "showTitle": true
        }
       }
@@ -1119,20 +988,24 @@
     },
     {
      "widget": {
-      "name": "spend-share-region",
+      "name": "risk-tier",
       "queries": [
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_geo",
+         "datasetName": "mv_risk",
          "fields": [
           {
-           "name": "region",
-           "expression": "`region`"
+           "name": "Supplier Tier",
+           "expression": "`Supplier Tier`"
           },
           {
-           "name": "sum(spend)",
-           "expression": "SUM(`spend`)"
+           "name": "measure(Single-Sourced Parts)",
+           "expression": "MEASURE(`Single-Sourced Parts`)"
+          },
+          {
+           "name": "Supplier Tier",
+           "expression": "`Supplier Tier`"
           }
          ],
          "disaggregated": false
@@ -1141,28 +1014,50 @@
       ],
       "spec": {
        "version": 3,
-       "widgetType": "pie",
+       "widgetType": "bar",
        "encodings": {
-        "angle": {
-         "fieldName": "sum(spend)",
-         "scale": {
-          "type": "quantitative"
-         },
-         "displayName": "Spend"
-        },
-        "color": {
-         "fieldName": "region",
+        "x": {
+         "fieldName": "Supplier Tier",
          "scale": {
           "type": "categorical"
          },
-         "displayName": "Region"
+         "displayName": "Supplier Tier"
         },
-        "label": {
-         "show": true
+        "y": {
+         "scale": {
+          "type": "quantitative"
+         },
+         "fieldName": "measure(Single-Sourced Parts)",
+         "displayName": "Single-sourced parts"
+        },
+        "color": {
+         "fieldName": "Supplier Tier",
+         "scale": {
+          "type": "categorical",
+          "mappings": [
+           {
+            "value": "A",
+            "color": "#59A14F"
+           },
+           {
+            "value": "B",
+            "color": "#F28E2C"
+           },
+           {
+            "value": "C",
+            "color": "#E15759"
+           },
+           {
+            "value": "Unrated",
+            "color": "#9AA5B1"
+           }
+          ]
+         },
+         "displayName": "Supplier Tier"
         }
        },
        "frame": {
-        "title": "Spend by supplier region",
+        "title": "Single-sourced parts by supplier tier",
         "showTitle": true
        }
       }
@@ -1176,7 +1071,7 @@
     },
     {
      "widget": {
-      "name": "risk-table",
+      "name": "risk-top",
       "queries": [
        {
         "name": "main_query",
@@ -1204,12 +1099,8 @@
            "expression": "`top_supplier_country`"
           },
           {
-           "name": "top_supplier_on_time",
-           "expression": "`top_supplier_on_time`"
-          },
-          {
-           "name": "share",
-           "expression": "`share`"
+           "name": "top_supplier_tier",
+           "expression": "`top_supplier_tier`"
           },
           {
            "name": "total_spend",
@@ -1246,26 +1137,8 @@
           "displayName": "Country"
          },
          {
-          "fieldName": "top_supplier_on_time",
-          "displayName": "Supplier on-time",
-          "format": {
-           "type": "number-percent",
-           "decimalPlaces": {
-            "type": "max",
-            "places": 1
-           }
-          }
-         },
-         {
-          "fieldName": "share",
-          "displayName": "Supplier share",
-          "format": {
-           "type": "number-percent",
-           "decimalPlaces": {
-            "type": "max",
-            "places": 1
-           }
-          }
+          "fieldName": "top_supplier_tier",
+          "displayName": "Tier"
          },
          {
           "fieldName": "total_spend",
@@ -1308,7 +1181,7 @@
       "name": "title-planning",
       "multilineTextboxSpec": {
        "lines": [
-        "# Forecast & buy signals\nVehicle builds forecast 13 weeks out (LightGBM), exploded through the BOM into part demand, then compared with stock on hand to decide what to order. Plant 2 is still ramping up."
+        "# Forecast & buy signals\nVehicle builds are forecast 13 weeks out (LightGBM), exploded through the BOM into part demand, then compared with stock to decide what to order. Plant 2 is still ramping."
        ]
       }
      },
@@ -1326,7 +1199,7 @@
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_signals",
+         "datasetName": "mv_planning",
          "fields": [
           {
            "name": "measure(Parts to Expedite)",
@@ -1355,7 +1228,7 @@
      "position": {
       "x": 0,
       "y": 2,
-      "width": 4,
+      "width": 3,
       "height": 3
      }
     },
@@ -1366,7 +1239,7 @@
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_signals",
+         "datasetName": "mv_planning",
          "fields": [
           {
            "name": "measure(Parts to Order)",
@@ -1393,9 +1266,9 @@
       }
      },
      "position": {
-      "x": 4,
+      "x": 3,
       "y": 2,
-      "width": 4,
+      "width": 3,
       "height": 3
      }
     },
@@ -1406,7 +1279,7 @@
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_signals",
+         "datasetName": "mv_planning",
          "fields": [
           {
            "name": "measure(Suggested Order Value)",
@@ -1442,15 +1315,62 @@
       }
      },
      "position": {
-      "x": 8,
+      "x": 6,
       "y": 2,
-      "width": 4,
+      "width": 3,
       "height": 3
      }
     },
     {
      "widget": {
-      "name": "builds-forecast",
+      "name": "kpi-cover",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "mv_planning",
+         "fields": [
+          {
+           "name": "measure(Days of Cover)",
+           "expression": "MEASURE(`Days of Cover`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Days of Cover)",
+         "displayName": "Days of cover",
+         "format": {
+          "type": "number-plain",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        }
+       },
+       "frame": {
+        "title": "Days of cover",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 9,
+      "y": 2,
+      "width": 3,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "builds",
       "queries": [
        {
         "name": "main_query",
@@ -1458,20 +1378,20 @@
          "datasetName": "ds_builds",
          "fields": [
           {
-           "name": "weekly(week)",
-           "expression": "DATE_TRUNC(\"WEEK\", `week`)"
+           "name": "weekly(week_start)",
+           "expression": "DATE_TRUNC(\"WEEK\", `week_start`)"
           },
           {
-           "name": "sum(actual)",
-           "expression": "SUM(`actual`)"
+           "name": "sum(actual_units)",
+           "expression": "SUM(`actual_units`)"
           },
           {
-           "name": "sum(forecast)",
-           "expression": "SUM(`forecast`)"
+           "name": "sum(forecast_p50)",
+           "expression": "SUM(`forecast_p50`)"
           },
           {
-           "name": "line",
-           "expression": "`line`"
+           "name": "production_line",
+           "expression": "`production_line`"
           }
          ],
          "disaggregated": false
@@ -1483,7 +1403,7 @@
        "widgetType": "line",
        "encodings": {
         "x": {
-         "fieldName": "weekly(week)",
+         "fieldName": "weekly(week_start)",
          "scale": {
           "type": "temporal"
          },
@@ -1495,23 +1415,23 @@
          },
          "fields": [
           {
-           "fieldName": "sum(actual)",
+           "fieldName": "sum(actual_units)",
            "displayName": "Actual"
           },
           {
-           "fieldName": "sum(forecast)",
+           "fieldName": "sum(forecast_p50)",
            "displayName": "Forecast"
           }
          ]
         }
        },
        "frame": {
-        "title": "Weekly vehicle builds: actual and forecast",
+        "title": "Weekly builds: actual and forecast",
         "showTitle": true
        },
        "facet": {
         "type": "wrap",
-        "fieldName": "line",
+        "fieldName": "production_line",
         "scale": {
          "type": "categorical"
         },
@@ -1528,29 +1448,29 @@
       "x": 0,
       "y": 5,
       "width": 8,
-      "height": 6
+      "height": 7
      }
     },
     {
      "widget": {
-      "name": "accuracy-by-horizon",
+      "name": "accuracy",
       "queries": [
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_accuracy",
+         "datasetName": "mv_accuracy",
          "fields": [
           {
-           "name": "horizon_weeks",
-           "expression": "`horizon_weeks`"
+           "name": "Horizon Weeks",
+           "expression": "`Horizon Weeks`"
           },
           {
            "name": "measure(WAPE)",
            "expression": "MEASURE(`WAPE`)"
           },
           {
-           "name": "model",
-           "expression": "`model`"
+           "name": "Model",
+           "expression": "`Model`"
           }
          ],
          "disaggregated": false
@@ -1562,17 +1482,17 @@
        "widgetType": "line",
        "encodings": {
         "x": {
-         "fieldName": "horizon_weeks",
+         "fieldName": "Horizon Weeks",
          "scale": {
           "type": "quantitative"
          },
-         "displayName": "Weeks ahead"
+         "displayName": "Horizon Weeks"
         },
         "y": {
-         "fieldName": "measure(WAPE)",
          "scale": {
           "type": "quantitative"
          },
+         "fieldName": "measure(WAPE)",
          "displayName": "WAPE",
          "format": {
           "type": "number-percent",
@@ -1583,7 +1503,7 @@
          }
         },
         "color": {
-         "fieldName": "model",
+         "fieldName": "Model",
          "scale": {
           "type": "categorical",
           "mappings": [
@@ -1601,10 +1521,10 @@
         }
        },
        "frame": {
-        "title": "Forecast error by horizon (backtest)",
+        "title": "Forecast error by weeks ahead (backtest)",
         "showTitle": true,
         "showDescription": true,
-        "description": "Lower is better. Weighted absolute percent error vs actuals."
+        "description": "Lower is better. LightGBM vs a flat recent-average baseline."
        }
       }
      },
@@ -1612,29 +1532,29 @@
       "x": 8,
       "y": 5,
       "width": 4,
-      "height": 6
+      "height": 7
      }
     },
     {
      "widget": {
-      "name": "signals-by-class",
+      "name": "signals-class",
       "queries": [
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_signals",
+         "datasetName": "mv_planning",
          "fields": [
           {
-           "name": "buffer_class",
-           "expression": "`buffer_class`"
+           "name": "Buffer Class",
+           "expression": "`Buffer Class`"
           },
           {
-           "name": "count(part_id)",
-           "expression": "COUNT(`part_id`)"
+           "name": "measure(Parts)",
+           "expression": "MEASURE(`Parts`)"
           },
           {
-           "name": "signal",
-           "expression": "`signal`"
+           "name": "Signal",
+           "expression": "`Signal`"
           }
          ],
          "disaggregated": false
@@ -1646,21 +1566,21 @@
        "widgetType": "bar",
        "encodings": {
         "x": {
-         "fieldName": "buffer_class",
+         "fieldName": "Buffer Class",
          "scale": {
           "type": "categorical"
          },
-         "displayName": "Buffer class"
+         "displayName": "Buffer Class"
         },
         "y": {
-         "fieldName": "count(part_id)",
          "scale": {
           "type": "quantitative"
          },
+         "fieldName": "measure(Parts)",
          "displayName": "Parts"
         },
         "color": {
-         "fieldName": "signal",
+         "fieldName": "Signal",
          "scale": {
           "type": "categorical",
           "mappings": [
@@ -1693,14 +1613,14 @@
      },
      "position": {
       "x": 0,
-      "y": 11,
+      "y": 12,
       "width": 12,
       "height": 5
      }
     },
     {
      "widget": {
-      "name": "signals-table",
+      "name": "signals",
       "queries": [
        {
         "name": "main_query",
@@ -1722,10 +1642,6 @@
           {
            "name": "part_name",
            "expression": "`part_name`"
-          },
-          {
-           "name": "component_category",
-           "expression": "`component_category`"
           },
           {
            "name": "buffer_class",
@@ -1758,14 +1674,6 @@
           {
            "name": "suggested_order_value",
            "expression": "`suggested_order_value`"
-          },
-          {
-           "name": "projected_stockout_date",
-           "expression": "`projected_stockout_date`"
-          },
-          {
-           "name": "signal_rank",
-           "expression": "`signal_rank`"
           }
          ],
          "disaggregated": true,
@@ -1802,10 +1710,6 @@
          {
           "fieldName": "part_name",
           "displayName": "Part"
-         },
-         {
-          "fieldName": "component_category",
-          "displayName": "Category"
          },
          {
           "fieldName": "buffer_class",
@@ -1868,22 +1772,18 @@
             "places": 1
            }
           }
-         },
-         {
-          "fieldName": "projected_stockout_date",
-          "displayName": "Stockout date"
          }
         ]
        },
        "frame": {
-        "title": "Buy signals",
+        "title": "Buy signals, most urgent first",
         "showTitle": true
        }
       }
      },
      "position": {
       "x": 0,
-      "y": 16,
+      "y": 17,
       "width": 12,
       "height": 8
      }
@@ -1901,7 +1801,7 @@
       "name": "title-policies",
       "multilineTextboxSpec": {
        "lines": [
-        "# Ordering policies\nThe last 52 weeks of real demand replayed under six ordering policies - same demand, same late deliveries, same starting point. Shortages dominate the bill: a vehicle has ~1,300 parts, so 99.7% availability per part is not enough. Plant 2 is ramping, and only schedule-driven MRP keeps up - trailing averages always lag a ramp."
+        "# Ordering policies\nThe last 52 weeks of real demand replayed under six ordering policies - same demand, same late deliveries, same starting point. **Stockout rate** is the share of parts that ran out at least once; unit fill rate always looks high because cheap high-volume parts dominate it. Plant 2 is ramping, and only schedule-driven MRP keeps up."
        ]
       }
      },
@@ -1917,26 +1817,26 @@
       "name": "filter-part",
       "queries": [
        {
-        "name": "filter-part_ds_sawtooth",
+        "name": "filter-part_0",
         "query": {
          "datasetName": "ds_sawtooth",
          "fields": [
           {
-           "name": "part",
-           "expression": "`part`"
+           "name": "part_label",
+           "expression": "`part_label`"
           }
          ],
          "disaggregated": false
         }
        },
        {
-        "name": "filter-part_ds_projection",
+        "name": "filter-part_1",
         "query": {
          "datasetName": "ds_projection",
          "fields": [
           {
-           "name": "part",
-           "expression": "`part`"
+           "name": "part_label",
+           "expression": "`part_label`"
           }
          ],
          "disaggregated": false
@@ -1946,23 +1846,23 @@
       "spec": {
        "version": 2,
        "widgetType": "filter-single-select",
+       "frame": {
+        "showTitle": true,
+        "title": "Part (for the sawtooth charts)"
+       },
        "encodings": {
         "fields": [
          {
-          "fieldName": "part",
-          "displayName": "Part",
-          "queryName": "filter-part_ds_sawtooth"
+          "fieldName": "part_label",
+          "displayName": "Part (for the sawtooth charts)",
+          "queryName": "filter-part_0"
          },
          {
-          "fieldName": "part",
-          "displayName": "Part",
-          "queryName": "filter-part_ds_projection"
+          "fieldName": "part_label",
+          "displayName": "Part (for the sawtooth charts)",
+          "queryName": "filter-part_1"
          }
         ]
-       },
-       "frame": {
-        "showTitle": true,
-        "title": "Part"
        },
        "selection": {
         "defaultSelection": {
@@ -1992,23 +1892,23 @@
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_policy",
+         "datasetName": "mv_policy",
          "fields": [
           {
-           "name": "policy",
-           "expression": "`policy`"
+           "name": "Policy",
+           "expression": "`Policy`"
           },
           {
-           "name": "sum(holding_cost)",
-           "expression": "SUM(`holding_cost`)"
+           "name": "measure(Holding Cost)",
+           "expression": "MEASURE(`Holding Cost`)"
           },
           {
-           "name": "sum(ordering_cost)",
-           "expression": "SUM(`ordering_cost`)"
+           "name": "measure(Ordering Cost)",
+           "expression": "MEASURE(`Ordering Cost`)"
           },
           {
-           "name": "sum(shortage_cost)",
-           "expression": "SUM(`shortage_cost`)"
+           "name": "measure(Shortage Cost)",
+           "expression": "MEASURE(`Shortage Cost`)"
           }
          ],
          "disaggregated": false
@@ -2020,7 +1920,7 @@
        "widgetType": "bar",
        "encodings": {
         "x": {
-         "fieldName": "policy",
+         "fieldName": "Policy",
          "scale": {
           "type": "categorical"
          },
@@ -2030,6 +1930,20 @@
          "scale": {
           "type": "quantitative"
          },
+         "fields": [
+          {
+           "fieldName": "measure(Holding Cost)",
+           "displayName": "Holding"
+          },
+          {
+           "fieldName": "measure(Ordering Cost)",
+           "displayName": "Ordering"
+          },
+          {
+           "fieldName": "measure(Shortage Cost)",
+           "displayName": "Shortage"
+          }
+         ],
          "format": {
           "type": "number-currency",
           "currencyCode": "USD",
@@ -2038,21 +1952,7 @@
            "type": "max",
            "places": 1
           }
-         },
-         "fields": [
-          {
-           "fieldName": "sum(holding_cost)",
-           "displayName": "Holding"
-          },
-          {
-           "fieldName": "sum(ordering_cost)",
-           "displayName": "Ordering"
-          },
-          {
-           "fieldName": "sum(shortage_cost)",
-           "displayName": "Shortage"
-          }
-         ]
+         }
         }
        },
        "frame": {
@@ -2070,24 +1970,24 @@
     },
     {
      "widget": {
-      "name": "policy-fill",
+      "name": "policy-stockout",
       "queries": [
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_policy",
+         "datasetName": "mv_policy",
          "fields": [
           {
-           "name": "policy",
-           "expression": "`policy`"
+           "name": "Policy",
+           "expression": "`Policy`"
           },
           {
-           "name": "measure(Fill Rate)",
-           "expression": "MEASURE(`Fill Rate`)"
+           "name": "measure(Stockout Rate)",
+           "expression": "MEASURE(`Stockout Rate`)"
           },
           {
-           "name": "policy",
-           "expression": "`policy`"
+           "name": "Policy",
+           "expression": "`Policy`"
           }
          ],
          "disaggregated": false
@@ -2099,18 +1999,18 @@
        "widgetType": "bar",
        "encodings": {
         "x": {
-         "fieldName": "policy",
+         "fieldName": "Policy",
          "scale": {
           "type": "categorical"
          },
          "displayName": "Policy"
         },
         "y": {
-         "fieldName": "measure(Fill Rate)",
          "scale": {
           "type": "quantitative"
          },
-         "displayName": "Fill rate",
+         "fieldName": "measure(Stockout Rate)",
+         "displayName": "Stockout rate",
          "format": {
           "type": "number-percent",
           "decimalPlaces": {
@@ -2120,7 +2020,7 @@
          }
         },
         "color": {
-         "fieldName": "policy",
+         "fieldName": "Policy",
          "scale": {
           "type": "categorical",
           "mappings": [
@@ -2154,7 +2054,7 @@
         }
        },
        "frame": {
-        "title": "Fill rate by policy",
+        "title": "Share of parts that ran out at least once",
         "showTitle": true
        }
       }
@@ -2168,24 +2068,24 @@
     },
     {
      "widget": {
-      "name": "policy-inventory",
+      "name": "policy-cash",
       "queries": [
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_policy",
+         "datasetName": "mv_policy",
          "fields": [
           {
-           "name": "policy",
-           "expression": "`policy`"
+           "name": "Policy",
+           "expression": "`Policy`"
           },
           {
            "name": "measure(Avg Inventory Value)",
            "expression": "MEASURE(`Avg Inventory Value`)"
           },
           {
-           "name": "policy",
-           "expression": "`policy`"
+           "name": "Policy",
+           "expression": "`Policy`"
           }
          ],
          "disaggregated": false
@@ -2197,17 +2097,17 @@
        "widgetType": "bar",
        "encodings": {
         "x": {
-         "fieldName": "policy",
+         "fieldName": "Policy",
          "scale": {
           "type": "categorical"
          },
          "displayName": "Policy"
         },
         "y": {
-         "fieldName": "measure(Avg Inventory Value)",
          "scale": {
           "type": "quantitative"
          },
+         "fieldName": "measure(Avg Inventory Value)",
          "displayName": "Avg inventory",
          "format": {
           "type": "number-currency",
@@ -2220,7 +2120,7 @@
          }
         },
         "color": {
-         "fieldName": "policy",
+         "fieldName": "Policy",
          "scale": {
           "type": "categorical",
           "mappings": [
@@ -2268,24 +2168,24 @@
     },
     {
      "widget": {
-      "name": "policy-by-site",
+      "name": "policy-site",
       "queries": [
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_policy",
+         "datasetName": "mv_policy",
          "fields": [
           {
-           "name": "site_id",
-           "expression": "`site_id`"
+           "name": "Site",
+           "expression": "`Site`"
           },
           {
-           "name": "measure(Total Cost)",
-           "expression": "MEASURE(`Total Cost`)"
+           "name": "measure(Stockout Rate)",
+           "expression": "MEASURE(`Stockout Rate`)"
           },
           {
-           "name": "policy",
-           "expression": "`policy`"
+           "name": "Policy",
+           "expression": "`Policy`"
           }
          ],
          "disaggregated": false
@@ -2297,22 +2197,20 @@
        "widgetType": "bar",
        "encodings": {
         "x": {
-         "fieldName": "site_id",
+         "fieldName": "Site",
          "scale": {
           "type": "categorical"
          },
          "displayName": "Site"
         },
         "y": {
-         "fieldName": "measure(Total Cost)",
          "scale": {
           "type": "quantitative"
          },
-         "displayName": "Total cost",
+         "fieldName": "measure(Stockout Rate)",
+         "displayName": "Stockout rate",
          "format": {
-          "type": "number-currency",
-          "currencyCode": "USD",
-          "abbreviation": "compact",
+          "type": "number-percent",
           "decimalPlaces": {
            "type": "max",
            "places": 1
@@ -2320,7 +2218,7 @@
          }
         },
         "color": {
-         "fieldName": "policy",
+         "fieldName": "Policy",
          "scale": {
           "type": "categorical",
           "mappings": [
@@ -2354,7 +2252,7 @@
         }
        },
        "frame": {
-        "title": "Total cost by site and policy",
+        "title": "Stockout rate by site and policy",
         "showTitle": true
        },
        "mark": {
@@ -2371,24 +2269,24 @@
     },
     {
      "widget": {
-      "name": "policy-by-class",
+      "name": "policy-class",
       "queries": [
        {
         "name": "main_query",
         "query": {
-         "datasetName": "ds_policy",
+         "datasetName": "mv_policy",
          "fields": [
           {
-           "name": "buffer_class",
-           "expression": "`buffer_class`"
+           "name": "Buffer Class",
+           "expression": "`Buffer Class`"
           },
           {
            "name": "measure(Total Cost)",
            "expression": "MEASURE(`Total Cost`)"
           },
           {
-           "name": "policy",
-           "expression": "`policy`"
+           "name": "Policy",
+           "expression": "`Policy`"
           }
          ],
          "disaggregated": false
@@ -2400,17 +2298,17 @@
        "widgetType": "bar",
        "encodings": {
         "x": {
-         "fieldName": "buffer_class",
+         "fieldName": "Buffer Class",
          "scale": {
           "type": "categorical"
          },
-         "displayName": "Buffer class"
+         "displayName": "Buffer Class"
         },
         "y": {
-         "fieldName": "measure(Total Cost)",
          "scale": {
           "type": "quantitative"
          },
+         "fieldName": "measure(Total Cost)",
          "displayName": "Total cost",
          "format": {
           "type": "number-currency",
@@ -2423,7 +2321,7 @@
          }
         },
         "color": {
-         "fieldName": "policy",
+         "fieldName": "Policy",
          "scale": {
           "type": "categorical",
           "mappings": [
@@ -2474,7 +2372,7 @@
     },
     {
      "widget": {
-      "name": "sawtooth-policies",
+      "name": "sawtooth",
       "queries": [
        {
         "name": "main_query",
@@ -2482,16 +2380,16 @@
          "datasetName": "ds_sawtooth",
          "fields": [
           {
-           "name": "day",
-           "expression": "`day`"
+           "name": "sim_date",
+           "expression": "`sim_date`"
           },
           {
-           "name": "sum(on_hand)",
-           "expression": "SUM(`on_hand`)"
+           "name": "sum(on_hand_units)",
+           "expression": "SUM(`on_hand_units`)"
           },
           {
-           "name": "policy",
-           "expression": "`policy`"
+           "name": "policy_name",
+           "expression": "`policy_name`"
           }
          ],
          "disaggregated": false
@@ -2503,21 +2401,21 @@
        "widgetType": "line",
        "encodings": {
         "x": {
-         "fieldName": "day",
+         "fieldName": "sim_date",
          "scale": {
           "type": "temporal"
          },
          "displayName": "Day"
         },
         "y": {
-         "fieldName": "sum(on_hand)",
          "scale": {
           "type": "quantitative"
          },
+         "fieldName": "sum(on_hand_units)",
          "displayName": "On hand (units)"
         },
         "color": {
-         "fieldName": "policy",
+         "fieldName": "policy_name",
          "scale": {
           "type": "categorical",
           "mappings": [
@@ -2547,7 +2445,7 @@
            }
           ]
          },
-         "displayName": "Policy"
+         "displayName": "policy_name"
         }
        },
        "frame": {
@@ -2565,7 +2463,7 @@
     },
     {
      "widget": {
-      "name": "sawtooth-projection",
+      "name": "projection",
       "queries": [
        {
         "name": "main_query",
@@ -2573,20 +2471,20 @@
          "datasetName": "ds_projection",
          "fields": [
           {
-           "name": "day",
-           "expression": "`day`"
+           "name": "projection_date",
+           "expression": "`projection_date`"
           },
           {
-           "name": "sum(on_hand)",
-           "expression": "SUM(`on_hand`)"
+           "name": "sum(on_hand_units)",
+           "expression": "SUM(`on_hand_units`)"
           },
           {
-           "name": "sum(reorder_point)",
-           "expression": "SUM(`reorder_point`)"
+           "name": "sum(reorder_point_units)",
+           "expression": "SUM(`reorder_point_units`)"
           },
           {
-           "name": "sum(safety_stock)",
-           "expression": "SUM(`safety_stock`)"
+           "name": "sum(safety_stock_units)",
+           "expression": "SUM(`safety_stock_units`)"
           }
          ],
          "disaggregated": false
@@ -2598,7 +2496,7 @@
        "widgetType": "line",
        "encodings": {
         "x": {
-         "fieldName": "day",
+         "fieldName": "projection_date",
          "scale": {
           "type": "temporal"
          },
@@ -2610,15 +2508,15 @@
          },
          "fields": [
           {
-           "fieldName": "sum(on_hand)",
+           "fieldName": "sum(on_hand_units)",
            "displayName": "On hand"
           },
           {
-           "fieldName": "sum(reorder_point)",
+           "fieldName": "sum(reorder_point_units)",
            "displayName": "Reorder point"
           },
           {
-           "fieldName": "sum(safety_stock)",
+           "fieldName": "sum(safety_stock_units)",
            "displayName": "Safety stock"
           }
          ]
@@ -2650,9 +2548,48 @@
       "name": "filter-region",
       "queries": [
        {
-        "name": "filter-region_ds_suppliers",
+        "name": "filter-region_0",
         "query": {
-         "datasetName": "ds_suppliers",
+         "datasetName": "mv_delivery",
+         "fields": [
+          {
+           "name": "Supplier Region",
+           "expression": "`Supplier Region`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "filter-region_1",
+        "query": {
+         "datasetName": "mv_risk",
+         "fields": [
+          {
+           "name": "Supplier Region",
+           "expression": "`Supplier Region`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "filter-region_2",
+        "query": {
+         "datasetName": "mv_planning",
+         "fields": [
+          {
+           "name": "Supplier Region",
+           "expression": "`Supplier Region`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "filter-region_3",
+        "query": {
+         "datasetName": "ds_scorecard",
          "fields": [
           {
            "name": "region",
@@ -2663,39 +2600,26 @@
         }
        },
        {
-        "name": "filter-region_ds_declining",
+        "name": "filter-region_4",
         "query": {
-         "datasetName": "ds_declining",
+         "datasetName": "ds_risk_top",
          "fields": [
           {
-           "name": "region",
-           "expression": "`region`"
+           "name": "top_supplier_region",
+           "expression": "`top_supplier_region`"
           }
          ],
          "disaggregated": false
         }
        },
        {
-        "name": "filter-region_ds_geo",
-        "query": {
-         "datasetName": "ds_geo",
-         "fields": [
-          {
-           "name": "region",
-           "expression": "`region`"
-          }
-         ],
-         "disaggregated": false
-        }
-       },
-       {
-        "name": "filter-region_ds_signals",
+        "name": "filter-region_5",
         "query": {
          "datasetName": "ds_signals",
          "fields": [
           {
-           "name": "region",
-           "expression": "`region`"
+           "name": "supplier_region",
+           "expression": "`supplier_region`"
           }
          ],
          "disaggregated": false
@@ -2705,33 +2629,43 @@
       "spec": {
        "version": 2,
        "widgetType": "filter-multi-select",
-       "encodings": {
-        "fields": [
-         {
-          "fieldName": "region",
-          "displayName": "Supplier region",
-          "queryName": "filter-region_ds_suppliers"
-         },
-         {
-          "fieldName": "region",
-          "displayName": "Supplier region",
-          "queryName": "filter-region_ds_declining"
-         },
-         {
-          "fieldName": "region",
-          "displayName": "Supplier region",
-          "queryName": "filter-region_ds_geo"
-         },
-         {
-          "fieldName": "region",
-          "displayName": "Supplier region",
-          "queryName": "filter-region_ds_signals"
-         }
-        ]
-       },
        "frame": {
         "showTitle": true,
         "title": "Supplier region"
+       },
+       "encodings": {
+        "fields": [
+         {
+          "fieldName": "Supplier Region",
+          "displayName": "Supplier region",
+          "queryName": "filter-region_0"
+         },
+         {
+          "fieldName": "Supplier Region",
+          "displayName": "Supplier region",
+          "queryName": "filter-region_1"
+         },
+         {
+          "fieldName": "Supplier Region",
+          "displayName": "Supplier region",
+          "queryName": "filter-region_2"
+         },
+         {
+          "fieldName": "region",
+          "displayName": "Supplier region",
+          "queryName": "filter-region_3"
+         },
+         {
+          "fieldName": "top_supplier_region",
+          "displayName": "Supplier region",
+          "queryName": "filter-region_4"
+         },
+         {
+          "fieldName": "supplier_region",
+          "displayName": "Supplier region",
+          "queryName": "filter-region_5"
+         }
+        ]
        }
       }
      },
@@ -2747,33 +2681,59 @@
       "name": "filter-category",
       "queries": [
        {
-        "name": "filter-category_ds_monthly",
+        "name": "filter-category_0",
         "query": {
-         "datasetName": "ds_monthly",
+         "datasetName": "mv_delivery",
          "fields": [
           {
-           "name": "component_category",
-           "expression": "`component_category`"
+           "name": "Component Category",
+           "expression": "`Component Category`"
           }
          ],
          "disaggregated": false
         }
        },
        {
-        "name": "filter-category_ds_risk",
+        "name": "filter-category_1",
         "query": {
-         "datasetName": "ds_risk",
+         "datasetName": "mv_risk",
          "fields": [
           {
-           "name": "component_category",
-           "expression": "`component_category`"
+           "name": "Component Category",
+           "expression": "`Component Category`"
           }
          ],
          "disaggregated": false
         }
        },
        {
-        "name": "filter-category_ds_risk_top",
+        "name": "filter-category_2",
+        "query": {
+         "datasetName": "mv_planning",
+         "fields": [
+          {
+           "name": "Component Category",
+           "expression": "`Component Category`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "filter-category_3",
+        "query": {
+         "datasetName": "mv_policy",
+         "fields": [
+          {
+           "name": "Component Category",
+           "expression": "`Component Category`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "filter-category_4",
         "query": {
          "datasetName": "ds_risk_top",
          "fields": [
@@ -2786,7 +2746,7 @@
         }
        },
        {
-        "name": "filter-category_ds_signals",
+        "name": "filter-category_5",
         "query": {
          "datasetName": "ds_signals",
          "fields": [
@@ -2802,33 +2762,43 @@
       "spec": {
        "version": 2,
        "widgetType": "filter-multi-select",
-       "encodings": {
-        "fields": [
-         {
-          "fieldName": "component_category",
-          "displayName": "Component category",
-          "queryName": "filter-category_ds_monthly"
-         },
-         {
-          "fieldName": "component_category",
-          "displayName": "Component category",
-          "queryName": "filter-category_ds_risk"
-         },
-         {
-          "fieldName": "component_category",
-          "displayName": "Component category",
-          "queryName": "filter-category_ds_risk_top"
-         },
-         {
-          "fieldName": "component_category",
-          "displayName": "Component category",
-          "queryName": "filter-category_ds_signals"
-         }
-        ]
-       },
        "frame": {
         "showTitle": true,
         "title": "Component category"
+       },
+       "encodings": {
+        "fields": [
+         {
+          "fieldName": "Component Category",
+          "displayName": "Component category",
+          "queryName": "filter-category_0"
+         },
+         {
+          "fieldName": "Component Category",
+          "displayName": "Component category",
+          "queryName": "filter-category_1"
+         },
+         {
+          "fieldName": "Component Category",
+          "displayName": "Component category",
+          "queryName": "filter-category_2"
+         },
+         {
+          "fieldName": "Component Category",
+          "displayName": "Component category",
+          "queryName": "filter-category_3"
+         },
+         {
+          "fieldName": "component_category",
+          "displayName": "Component category",
+          "queryName": "filter-category_4"
+         },
+         {
+          "fieldName": "component_category",
+          "displayName": "Component category",
+          "queryName": "filter-category_5"
+         }
+        ]
        }
       }
      },
@@ -2841,16 +2811,42 @@
     },
     {
      "widget": {
-      "name": "filter-month",
+      "name": "filter-site",
       "queries": [
        {
-        "name": "filter-month_ds_monthly",
+        "name": "filter-site_0",
         "query": {
-         "datasetName": "ds_monthly",
+         "datasetName": "mv_planning",
          "fields": [
           {
-           "name": "order_month",
-           "expression": "`order_month`"
+           "name": "Site",
+           "expression": "`Site`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "filter-site_1",
+        "query": {
+         "datasetName": "mv_policy",
+         "fields": [
+          {
+           "name": "Site",
+           "expression": "`Site`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "filter-site_2",
+        "query": {
+         "datasetName": "ds_signals",
+         "fields": [
+          {
+           "name": "site_id",
+           "expression": "`site_id`"
           }
          ],
          "disaggregated": false
@@ -2859,19 +2855,29 @@
       ],
       "spec": {
        "version": 2,
-       "widgetType": "filter-date-range-picker",
+       "widgetType": "filter-multi-select",
+       "frame": {
+        "showTitle": true,
+        "title": "Site"
+       },
        "encodings": {
         "fields": [
          {
-          "fieldName": "order_month",
-          "displayName": "Order month",
-          "queryName": "filter-month_ds_monthly"
+          "fieldName": "Site",
+          "displayName": "Site",
+          "queryName": "filter-site_0"
+         },
+         {
+          "fieldName": "Site",
+          "displayName": "Site",
+          "queryName": "filter-site_1"
+         },
+         {
+          "fieldName": "site_id",
+          "displayName": "Site",
+          "queryName": "filter-site_2"
          }
         ]
-       },
-       "frame": {
-        "showTitle": true,
-        "title": "Order month"
        }
       }
      },
