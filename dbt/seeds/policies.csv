@@ -1,0 +1,7 @@
+policy_id,policy_name,review_type,description
+current,Current,periodic,"reorder point + order-up-to, reviewed every R days, safety stock by buffer class"
+lean,Lean,periodic,"same as current with half the safety stock"
+high_service,High service,periodic,"99% service level for every part using actual supplier lead time variability"
+eoq,EOQ,continuous,"order the economic order quantity when inventory position drops below the reorder point"
+ddmrp,DDMRP,continuous,"red / yellow / green buffers from ADU with lead time and variability factors"
+mrp,MRP (schedule),periodic,"same rules as current but sized from scheduled usage over the next lead time"

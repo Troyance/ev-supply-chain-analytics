@@ -1,0 +1,49 @@
+version: 2
+
+# everything the spark notebooks land. in a real company these would be fivetran-synced erp / mes / wms tables.
+sources:
+  - name: tpch
+    description: TPC-H sample data, only used for the supplier master (names, countries, regions).
+    schema: "{{ var('source_schema') }}"
+    tables:
+      - name: bronze_supplier
+      - name: bronze_nation
+      - name: bronze_region
+
+  - name: erp
+    description: Production planning, parts master, BOM, sourcing and purchasing (stand-in for an ERP extract).
+    schema: "{{ var('source_schema') }}"
+    tables:
+      - name: dim_site
+      - name: dim_vehicle_model
+      - name: dim_part_catalog
+      - name: dim_bom
+      - name: dim_active_supplier
+      - name: dim_sourcing
+      - name: fct_vehicle_builds
+      - name: fct_po_lines_scenario
+      - name: dim_part_planning
+        description: MRP planning parameters per part (buffer class, lead time, review period, pack size, moq).
+
+  - name: service
+    schema: "{{ var('source_schema') }}"
+    tables:
+      - name: fct_service_demand
+
+  - name: wms
+    schema: "{{ var('source_schema') }}"
+    tables:
+      - name: fct_inventory_snapshot
+
+  - name: ml
+    description: Outputs of the forecasting and simulation notebooks.
+    schema: "{{ var('source_schema') }}"
+    tables:
+      - name: forecast_run
+        config:
+          loaded_at_field: created_at
+          freshness:
+            warn_after: {count: 8, period: day}
+      - name: fct_forecast
+      - name: gold_policy_simulation_daily
+      - name: gold_inventory_projection

@@ -1,0 +1,1355 @@
+version: 2
+models:
+- name: dim_date
+  description: One row per calendar day, 2019-2027. Weeks start on monday.
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: date_key
+    data_type: int
+    description: yyyymmdd integer key.
+    constraints:
+    - type: not_null
+    - type: primary_key
+      name: pk_dim_date_date_key
+      warn_unenforced: false
+    data_tests:
+    - unique
+    - not_null
+  - name: date_day
+    data_type: date
+    description: The date.
+    constraints:
+    - type: not_null
+  - name: week_start
+    data_type: date
+    description: Monday of the week.
+    constraints:
+    - type: not_null
+  - name: iso_week
+    data_type: int
+    description: ISO week number.
+  - name: iso_year
+    data_type: int
+    description: ISO year (the year the week's thursday falls in).
+  - name: month_start
+    data_type: date
+    description: First day of the month.
+  - name: month_of_year
+    data_type: int
+    description: 1-12.
+  - name: quarter_of_year
+    data_type: int
+    description: 1-4.
+  - name: calendar_year
+    data_type: int
+    description: Calendar year.
+  - name: iso_day_of_week
+    data_type: int
+    description: 1 = monday, 7 = sunday.
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 1
+          max_value: 7
+  - name: is_weekend
+    data_type: boolean
+    description: Saturday or sunday.
+  - name: is_shutdown_week
+    data_type: boolean
+    description: 'Plant shutdown weeks: summer changeover (iso weeks 27-28) and the holidays (52, 53, 1).'
+  - name: is_quarter_end_push
+    data_type: boolean
+    description: Second half of the last month of a quarter, when plants push volume.
+  - name: chip_shortage_severity
+    data_type: double
+    description: 0 outside the 2021-22 chip shortage, rising to 1 at its worst (april 2022).
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+          max_value: 1
+- name: dim_site
+  description: Plants and the service parts DC.
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: site_key
+    data_type: string
+    description: Surrogate key.
+    constraints:
+    - type: not_null
+    - type: primary_key
+      name: pk_dim_site_site_key
+      warn_unenforced: false
+    data_tests:
+    - unique
+    - not_null
+  - name: site_id
+    data_type: string
+    description: PLT1, PLT2 or SDC1.
+    constraints:
+    - type: not_null
+    data_tests:
+    - unique
+  - name: site_name
+    data_type: string
+    description: Display name.
+  - name: site_type
+    data_type: string
+    description: plant or service_dc.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - plant
+          - service_dc
+- name: dim_vehicle_model
+  description: Vehicle models.
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: vehicle_model_key
+    data_type: string
+    description: Surrogate key.
+    constraints:
+    - type: not_null
+    - type: primary_key
+      name: pk_dim_vehicle_model_vehicle_model_key
+      warn_unenforced: false
+    data_tests:
+    - unique
+    - not_null
+  - name: vehicle_model_id
+    data_type: string
+    description: PU, SUV or VAN.
+    constraints:
+    - type: not_null
+    data_tests:
+    - unique
+  - name: vehicle_model_name
+    data_type: string
+    description: Display name.
+- name: dim_part
+  description: 'The single part dimension: about 1,900 parts with master data and MRP planning parameters.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: part_key
+    data_type: string
+    description: Surrogate key.
+    constraints:
+    - type: not_null
+    - type: primary_key
+      name: pk_dim_part_part_key
+      warn_unenforced: false
+    data_tests:
+    - unique
+    - not_null
+  - name: part_id
+    data_type: bigint
+    description: Natural part id.
+    constraints:
+    - type: not_null
+    data_tests:
+    - unique
+  - name: part_number
+    data_type: string
+    description: Part number, prefixed by category (BAT, ELE, WIR, BDY, FST).
+  - name: part_name
+    data_type: string
+    description: Part description.
+  - name: component_category
+    data_type: string
+    description: Component category.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - Battery materials
+          - Electronics
+          - Wiring & harnesses
+          - Body & chassis
+          - Fasteners & fittings
+  - name: standard_cost
+    data_type: decimal(18,4)
+    description: Standard unit cost, USD.
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+          max_value: 100000
+  - name: buffer_class
+    data_type: string
+    description: Replenishment strategy.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - JIT
+          - KANBAN
+          - STANDARD
+          - STRATEGIC
+  - name: planning_lead_time_days
+    data_type: int
+    description: Lead time used for planning, days.
+  - name: lead_time_stddev_days
+    data_type: double
+    description: Lead time variability used for safety stock, days.
+  - name: review_period_days
+    data_type: int
+    description: How often the part is reviewed for ordering, days.
+  - name: service_level_z
+    data_type: double
+    description: Safety stock z-score (1.65 = 95%, 2.33 = 99%).
+  - name: pack_size
+    data_type: bigint
+    description: Order multiple.
+  - name: moq
+    data_type: bigint
+    description: Minimum order quantity.
+- name: dim_supplier
+  description: Active suppliers (about 800) with their current tier.
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: supplier_key
+    data_type: string
+    description: Surrogate key.
+    constraints:
+    - type: not_null
+    - type: primary_key
+      name: pk_dim_supplier_supplier_key
+      warn_unenforced: false
+    data_tests:
+    - unique
+    - not_null
+  - name: supplier_id
+    data_type: bigint
+    description: Natural supplier id.
+    constraints:
+    - type: not_null
+    data_tests:
+    - unique
+  - name: supplier_name
+    data_type: string
+    description: Supplier name.
+  - name: country
+    data_type: string
+    description: Country shipped from.
+  - name: region
+    data_type: string
+    description: World region shipped from.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - America
+          - Asia
+          - Europe
+          - Africa
+          - Middle East
+  - name: quoted_lead_time_days
+    data_type: int
+    description: Lead time the supplier quotes, days.
+  - name: transit_days
+    data_type: int
+    description: Typical transit time, days.
+  - name: current_tier
+    data_type: string
+    description: Tier right now. For history use dim_supplier_tier_history.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - A
+          - B
+          - C
+          - Unrated
+- name: dim_supplier_tier_history
+  description: SCD type 2. One row per supplier per tier period, judged on the rolling 12 months before each month.
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: supplier_tier_key
+    data_type: string
+    description: Surrogate key.
+    constraints:
+    - type: not_null
+    - type: primary_key
+      name: pk_dim_supplier_tier_history_supplier_tier_key
+      warn_unenforced: false
+    data_tests:
+    - unique
+    - not_null
+  - name: supplier_key
+    data_type: string
+    description: Supplier.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_dim_supplier_tier_history_supplier_key
+      to: ref('dim_supplier')
+      to_columns:
+      - supplier_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_supplier')
+          field: supplier_key
+  - name: supplier_id
+    data_type: bigint
+    description: Natural supplier id.
+    constraints:
+    - type: not_null
+  - name: tier
+    data_type: string
+    description: A (97%+ on time), B (90-97%), C (under 90%), Unrated (under 20 deliveries of history).
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - A
+          - B
+          - C
+          - Unrated
+  - name: valid_from
+    data_type: date
+    description: First day the tier applies.
+    constraints:
+    - type: not_null
+  - name: valid_to
+    data_type: date
+    description: Last day the tier applies. 9999-12-31 for the current period.
+    constraints:
+    - type: not_null
+  - name: is_current
+    data_type: boolean
+    description: True for the period that applies today.
+  - name: period_on_time_rate
+    data_type: double
+    description: On-time rate of deliveries during the period.
+  - name: period_delivery_lines
+    data_type: bigint
+    description: Deliveries during the period.
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - supplier_id
+        - valid_from
+  - dbt_utils.expression_is_true:
+      arguments:
+        expression: valid_from <= valid_to
+- name: bridge_part_supplier
+  description: Bridge between parts and suppliers. One primary source per part, plus a secondary for dual-sourced parts.
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: part_key
+    data_type: string
+    description: Part.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_bridge_part_supplier_part_key
+      to: ref('dim_part')
+      to_columns:
+      - part_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_part')
+          field: part_key
+  - name: supplier_key
+    data_type: string
+    description: Supplier.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_bridge_part_supplier_supplier_key
+      to: ref('dim_supplier')
+      to_columns:
+      - supplier_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_supplier')
+          field: supplier_key
+  - name: part_id
+    data_type: bigint
+    description: Natural part id.
+  - name: supplier_id
+    data_type: bigint
+    description: Natural supplier id.
+  - name: sourcing_role
+    data_type: string
+    description: primary or secondary.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - primary
+          - secondary
+  - name: volume_share
+    data_type: decimal(5,4)
+    description: Share of the part's volume, 0-1.
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+          max_value: 1
+  - name: unit_price
+    data_type: decimal(18,4)
+    description: Price per unit, USD.
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - part_key
+        - supplier_key
+  constraints:
+  - type: primary_key
+    name: pk_bridge_part_supplier
+    columns:
+    - part_key
+    - supplier_key
+    warn_unenforced: false
+- name: dim_policy
+  description: Ordering policies compared in the simulation.
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: policy_key
+    data_type: string
+    description: Surrogate key.
+    constraints:
+    - type: not_null
+    - type: primary_key
+      name: pk_dim_policy_policy_key
+      warn_unenforced: false
+    data_tests:
+    - unique
+    - not_null
+  - name: policy_id
+    data_type: string
+    description: Short id.
+    constraints:
+    - type: not_null
+    data_tests:
+    - unique
+  - name: policy_name
+    data_type: string
+    description: Display name.
+  - name: review_type
+    data_type: string
+    description: periodic or continuous.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - periodic
+          - continuous
+  - name: description
+    data_type: string
+    description: How the policy orders.
+- name: dim_forecast_run
+  description: One row per forecast run (backtest or production).
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: forecast_run_key
+    data_type: string
+    description: Surrogate key.
+    constraints:
+    - type: not_null
+    - type: primary_key
+      name: pk_dim_forecast_run_forecast_run_key
+      warn_unenforced: false
+    data_tests:
+    - unique
+    - not_null
+  - name: run_id
+    data_type: string
+    description: Run id from the forecasting notebook.
+    constraints:
+    - type: not_null
+    data_tests:
+    - unique
+  - name: run_type
+    data_type: string
+    description: backtest or production.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - backtest
+          - production
+  - name: forecast_type
+    data_type: string
+    description: vehicle_builds or service_parts.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - vehicle_builds
+          - service_parts
+  - name: model_name
+    data_type: string
+    description: Model that produced the run.
+  - name: model_version
+    data_type: string
+    description: Unity Catalog model version.
+  - name: mlflow_run_id
+    data_type: string
+    description: MLflow run.
+  - name: history_end_week
+    data_type: date
+    description: Last week of actuals used.
+  - name: origin_week_start
+    data_type: date
+    description: First forecast origin.
+  - name: origin_week_end
+    data_type: date
+    description: Last forecast origin.
+  - name: horizon_weeks
+    data_type: int
+    description: Weeks ahead forecast.
+  - name: backtest_wape
+    data_type: double
+    description: Backtest WAPE, null for production runs.
+  - name: backtest_bias
+    data_type: double
+    description: Backtest bias, null for production runs.
+  - name: created_at
+    data_type: timestamp
+    description: When the run was written.
+  - name: is_latest
+    data_type: boolean
+    description: Latest run for its run type, forecast type and model.
+- name: dim_forecast_series
+  description: 'One row per forecast series: a plant + vehicle model for builds, a site + part for service parts.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: series_key
+    data_type: string
+    description: Surrogate key.
+    constraints:
+    - type: not_null
+    - type: primary_key
+      name: pk_dim_forecast_series_series_key
+      warn_unenforced: false
+    data_tests:
+    - unique
+    - not_null
+  - name: forecast_type
+    data_type: string
+    description: vehicle_builds or service_parts.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - vehicle_builds
+          - service_parts
+  - name: site_id
+    data_type: string
+    description: Site.
+  - name: vehicle_model_id
+    data_type: string
+    description: Vehicle model, for build series.
+  - name: part_id
+    data_type: bigint
+    description: Part, for service series.
+  - name: site_key
+    data_type: string
+    description: Site.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_dim_forecast_series_site_key
+      to: ref('dim_site')
+      to_columns:
+      - site_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_site')
+          field: site_key
+  - name: vehicle_model_key
+    data_type: string
+    description: Vehicle model, for build series.
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_vehicle_model')
+          field: vehicle_model_key
+  - name: part_key
+    data_type: string
+    description: Part, for service series.
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_part')
+          field: part_key
+  - name: series_name
+    data_type: string
+    description: Readable name.
+  data_tests:
+  - dbt_utils.expression_is_true:
+      arguments:
+        expression: (forecast_type = 'vehicle_builds' and vehicle_model_id is not null and part_id is null) or (forecast_type = 'service_parts'
+          and part_id is not null and vehicle_model_id is null)
+- name: fct_vehicle_builds
+  description: 'Grain: week x site x vehicle model. Vehicles built.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: week_date_key
+    data_type: int
+    description: Week (monday).
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_vehicle_builds_week_date_key
+      to: ref('dim_date')
+      to_columns:
+      - date_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_date')
+          field: date_key
+  - name: site_key
+    data_type: string
+    description: Plant.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_vehicle_builds_site_key
+      to: ref('dim_site')
+      to_columns:
+      - site_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_site')
+          field: site_key
+  - name: vehicle_model_key
+    data_type: string
+    description: Vehicle model.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_vehicle_builds_vehicle_model_key
+      to: ref('dim_vehicle_model')
+      to_columns:
+      - vehicle_model_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_vehicle_model')
+          field: vehicle_model_key
+  - name: week_start
+    data_type: date
+    description: Monday of the build week.
+  - name: site_id
+    data_type: string
+    description: Plant id.
+  - name: vehicle_model_id
+    data_type: string
+    description: Vehicle model id.
+  - name: units_built
+    data_type: bigint
+    description: Vehicles built.
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+          max_value: 10000
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - week_date_key
+        - site_key
+        - vehicle_model_key
+  constraints:
+  - type: primary_key
+    name: pk_fct_vehicle_builds
+    columns:
+    - week_date_key
+    - site_key
+    - vehicle_model_key
+    warn_unenforced: false
+- name: fct_po_deliveries
+  description: 'Grain: one PO delivery line. Supplier tier is the tier at the time of receipt.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: po_line_id
+    data_type: bigint
+    description: Delivery line id (degenerate dimension).
+    constraints:
+    - type: not_null
+    - type: primary_key
+      name: pk_fct_po_deliveries_po_line_id
+      warn_unenforced: false
+    data_tests:
+    - unique
+    - not_null
+  - name: order_date_key
+    data_type: int
+    description: Order placed.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_po_deliveries_order_date_key
+      to: ref('dim_date')
+      to_columns:
+      - date_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_date')
+          field: date_key
+  - name: promised_date_key
+    data_type: int
+    description: Promised delivery.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_po_deliveries_promised_date_key
+      to: ref('dim_date')
+      to_columns:
+      - date_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_date')
+          field: date_key
+  - name: received_date_key
+    data_type: int
+    description: Actual receipt.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_po_deliveries_received_date_key
+      to: ref('dim_date')
+      to_columns:
+      - date_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_date')
+          field: date_key
+  - name: site_key
+    data_type: string
+    description: Receiving plant.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_po_deliveries_site_key
+      to: ref('dim_site')
+      to_columns:
+      - site_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_site')
+          field: site_key
+  - name: part_key
+    data_type: string
+    description: Part.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_po_deliveries_part_key
+      to: ref('dim_part')
+      to_columns:
+      - part_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_part')
+          field: part_key
+  - name: supplier_key
+    data_type: string
+    description: Supplier.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_po_deliveries_supplier_key
+      to: ref('dim_supplier')
+      to_columns:
+      - supplier_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_supplier')
+          field: supplier_key
+  - name: supplier_tier_key
+    data_type: string
+    description: Supplier tier as of the receipt date.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_po_deliveries_supplier_tier_key
+      to: ref('dim_supplier_tier_history')
+      to_columns:
+      - supplier_tier_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_supplier_tier_history')
+          field: supplier_tier_key
+  - name: site_id
+    data_type: string
+    description: Plant id.
+  - name: part_id
+    data_type: bigint
+    description: Part id.
+  - name: supplier_id
+    data_type: bigint
+    description: Supplier id.
+  - name: sourcing_role
+    data_type: string
+    description: primary or secondary source.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - primary
+          - secondary
+  - name: ship_mode
+    data_type: string
+    description: Truck, Rail or Ship.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - Truck
+          - Rail
+          - Ship
+  - name: order_date
+    data_type: date
+    description: Order placed.
+  - name: ship_date
+    data_type: date
+    description: Left the supplier.
+  - name: promised_date
+    data_type: date
+    description: Promised delivery.
+  - name: received_date
+    data_type: date
+    description: Actual receipt.
+  - name: quantity
+    data_type: bigint
+    description: Units delivered.
+  - name: net_amount
+    data_type: decimal(18,2)
+    description: Value delivered, USD.
+  - name: lead_time_days
+    data_type: int
+    description: Order to receipt, days.
+  - name: days_late
+    data_type: int
+    description: Received minus promised, days. Zero or negative is on time.
+  - name: is_on_time
+    data_type: boolean
+    description: Received on or before the promised date.
+  data_tests:
+  - dbt_utils.expression_is_true:
+      arguments:
+        expression: received_date >= order_date
+  - dbt_utils.expression_is_true:
+      arguments:
+        expression: quantity > 0
+  - dbt_utils.expression_is_true:
+      arguments:
+        expression: net_amount >= 0
+- name: fct_part_demand
+  description: 'Grain: week x site x part. Plant demand is dependent (builds x BOM), service DC demand is independent.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: week_date_key
+    data_type: int
+    description: Week (monday).
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_part_demand_week_date_key
+      to: ref('dim_date')
+      to_columns:
+      - date_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_date')
+          field: date_key
+  - name: site_key
+    data_type: string
+    description: Site.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_part_demand_site_key
+      to: ref('dim_site')
+      to_columns:
+      - site_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_site')
+          field: site_key
+  - name: part_key
+    data_type: string
+    description: Part.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_part_demand_part_key
+      to: ref('dim_part')
+      to_columns:
+      - part_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_part')
+          field: part_key
+  - name: week_start
+    data_type: date
+    description: Monday of the week.
+  - name: site_id
+    data_type: string
+    description: Site id.
+  - name: part_id
+    data_type: bigint
+    description: Part id.
+  - name: demand_type
+    data_type: string
+    description: dependent or independent.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - dependent
+          - independent
+  - name: units
+    data_type: bigint
+    description: Units needed.
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+          max_value: 100000000
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - week_date_key
+        - site_key
+        - part_key
+  constraints:
+  - type: primary_key
+    name: pk_fct_part_demand
+    columns:
+    - week_date_key
+    - site_key
+    - part_key
+    warn_unenforced: false
+- name: fct_inventory_snapshot
+  description: 'Grain: snapshot date x site x part. Stock on hand and on order.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: snapshot_date_key
+    data_type: int
+    description: Snapshot date.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_inventory_snapshot_snapshot_date_key
+      to: ref('dim_date')
+      to_columns:
+      - date_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_date')
+          field: date_key
+  - name: site_key
+    data_type: string
+    description: Site.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_inventory_snapshot_site_key
+      to: ref('dim_site')
+      to_columns:
+      - site_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_site')
+          field: site_key
+  - name: part_key
+    data_type: string
+    description: Part.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_inventory_snapshot_part_key
+      to: ref('dim_part')
+      to_columns:
+      - part_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_part')
+          field: part_key
+  - name: snapshot_date
+    data_type: date
+    description: Snapshot date.
+  - name: site_id
+    data_type: string
+    description: Site id.
+  - name: part_id
+    data_type: bigint
+    description: Part id.
+  - name: on_hand_qty
+    data_type: bigint
+    description: Units on hand.
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+          max_value: 1000000000
+  - name: on_order_qty
+    data_type: bigint
+    description: Units on open orders.
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+          max_value: 1000000000
+  - name: on_hand_value
+    data_type: decimal(18,2)
+    description: On hand x standard cost, USD.
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - snapshot_date_key
+        - site_key
+        - part_key
+  constraints:
+  - type: primary_key
+    name: pk_fct_inventory_snapshot
+    columns:
+    - snapshot_date_key
+    - site_key
+    - part_key
+    warn_unenforced: false
+- name: fct_forecast
+  description: 'Grain: forecast run x series x origin week x target week. Backtest runs forecast the same target week from several origins. Append-only.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: forecast_run_key
+    data_type: string
+    description: Forecast run.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_forecast_forecast_run_key
+      to: ref('dim_forecast_run')
+      to_columns:
+      - forecast_run_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_forecast_run')
+          field: forecast_run_key
+  - name: series_key
+    data_type: string
+    description: What is being forecast.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_forecast_series_key
+      to: ref('dim_forecast_series')
+      to_columns:
+      - series_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_forecast_series')
+          field: series_key
+  - name: origin_week_date_key
+    data_type: int
+    description: Week the forecast was made from.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_forecast_origin_week_date_key
+      to: ref('dim_date')
+      to_columns:
+      - date_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_date')
+          field: date_key
+  - name: target_week_date_key
+    data_type: int
+    description: Week being forecast.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_forecast_target_week_date_key
+      to: ref('dim_date')
+      to_columns:
+      - date_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_date')
+          field: date_key
+  - name: run_id
+    data_type: string
+    description: Run id (kept for incremental loads).
+  - name: origin_week
+    data_type: date
+    description: Week the forecast was made from.
+  - name: target_week
+    data_type: date
+    description: Week being forecast.
+  - name: horizon_weeks
+    data_type: int
+    description: Weeks ahead, 1-13.
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 1
+          max_value: 13
+  - name: forecast_p10
+    data_type: decimal(18,2)
+    description: Low end.
+  - name: forecast_p50
+    data_type: decimal(18,2)
+    description: Point forecast.
+  - name: forecast_p90
+    data_type: decimal(18,2)
+    description: High end.
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - forecast_run_key
+        - series_key
+        - origin_week_date_key
+        - target_week_date_key
+  - dbt_utils.expression_is_true:
+      arguments:
+        expression: forecast_p50 >= 0
+  - dbt_utils.expression_is_true:
+      arguments:
+        expression: forecast_p10 is null or forecast_p10 <= forecast_p90
+  constraints:
+  - type: primary_key
+    name: pk_fct_forecast
+    columns:
+    - forecast_run_key
+    - series_key
+    - origin_week_date_key
+    - target_week_date_key
+    warn_unenforced: false
+- name: fct_policy_simulation
+  description: 'Grain: policy x site x part x day. Daily stock under each simulated ordering policy.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: policy_key
+    data_type: string
+    description: Policy.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_policy_simulation_policy_key
+      to: ref('dim_policy')
+      to_columns:
+      - policy_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_policy')
+          field: policy_key
+  - name: site_key
+    data_type: string
+    description: Site.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_policy_simulation_site_key
+      to: ref('dim_site')
+      to_columns:
+      - site_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_site')
+          field: site_key
+  - name: part_key
+    data_type: string
+    description: Part.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_policy_simulation_part_key
+      to: ref('dim_part')
+      to_columns:
+      - part_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_part')
+          field: part_key
+  - name: sim_date_key
+    data_type: int
+    description: Simulated day.
+    constraints:
+    - type: not_null
+    - type: foreign_key
+      name: fk_fct_policy_simulation_sim_date_key
+      to: ref('dim_date')
+      to_columns:
+      - date_key
+      warn_unenforced: false
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_date')
+          field: date_key
+  - name: policy_id
+    data_type: string
+    description: Policy id.
+  - name: site_id
+    data_type: string
+    description: Site id.
+  - name: part_id
+    data_type: bigint
+    description: Part id.
+  - name: sim_date
+    data_type: date
+    description: Simulated day.
+  - name: demand_units
+    data_type: decimal(18,2)
+    description: Demand that day.
+  - name: on_hand_units
+    data_type: decimal(18,2)
+    description: Stock at end of day.
+  - name: received_units
+    data_type: decimal(18,2)
+    description: Units received.
+  - name: ordered_units
+    data_type: decimal(18,2)
+    description: Units ordered.
+  - name: short_units
+    data_type: decimal(18,2)
+    description: Demand that could not be met.
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - policy_key
+        - site_key
+        - part_key
+        - sim_date_key
+  - dbt_utils.expression_is_true:
+      arguments:
+        expression: on_hand_units >= 0
+  - dbt_utils.expression_is_true:
+      arguments:
+        expression: short_units <= demand_units + 0.01
+  constraints:
+  - type: primary_key
+    name: pk_fct_policy_simulation
+    columns:
+    - policy_key
+    - site_key
+    - part_key
+    - sim_date_key
+    warn_unenforced: false
+unit_tests:
+- name: tier_uses_only_prior_months
+  description: A month's tier is judged on the 12 months before it, and suppliers need 20 deliveries of history to be rated.
+  model: int_supplier_monthly_performance
+  given:
+  - input: ref('stg_erp__po_deliveries')
+    format: sql
+    rows: select 1 as supplier_id, date'2024-01-15' as received_date, date'2024-01-15' as promised_date from range(30) union all select 1, date'2024-02-15',
+      case when id < 6 then date'2024-02-10' else date'2024-02-15' end from range(30) union all select 1, date'2024-03-15', date'2024-03-15' from
+      range(10) union all select 2, date'2024-01-15', date'2024-01-15' from range(10) union all select 2, date'2024-02-15', date'2024-02-15' from
+      range(1)
+  expect:
+    rows:
+    - supplier_id: 1
+      month_start: '2024-01-01'
+      tier: Unrated
+    - supplier_id: 1
+      month_start: '2024-02-01'
+      tier: A
+    - supplier_id: 1
+      month_start: '2024-03-01'
+      tier: B
+    - supplier_id: 2
+      month_start: '2024-01-01'
+      tier: Unrated
+    - supplier_id: 2
+      month_start: '2024-02-01'
+      tier: Unrated
