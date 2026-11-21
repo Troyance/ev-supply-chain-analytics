@@ -5,7 +5,7 @@
 # MAGIC Two M5-style LightGBM models:
 # MAGIC
 # MAGIC - **vehicle builds** per plant × model (4 series). Part demand at the plants comes from exploding this
-# MAGIC   through the BOM later — nobody forecasts plant parts directly.
+# MAGIC   through the BOM later - nobody forecasts plant parts directly.
 # MAGIC - **service parts** demand at the DC (~280 lumpy, intermittent series). Tweedie objective, like the M5 winners.
 # MAGIC
 # MAGIC How it's set up:
@@ -212,11 +212,11 @@ s_bt, s_fut, s_metrics, s_imp, s_ver, s_run = run_forecast(
 # MAGIC %md
 # MAGIC ## write to the forecast data model
 # MAGIC
-# MAGIC Forecasts are **append-only** and keyed by `run_id`. Never overwrite a forecast — keeping every run is what
+# MAGIC Forecasts are **append-only** and keyed by `run_id`. Never overwrite a forecast - keeping every run is what
 # MAGIC lets you measure accuracy later, compare models, and answer "what did we think in October?"
 # MAGIC
-# MAGIC - `forecast_run` – one row per run: what model, which version, trained through when, how it backtested
-# MAGIC - `fct_forecast` – one row per run × series × target week, with p10 / p50 / p90
+# MAGIC - `forecast_run` - one row per run: what model, which version, trained through when, how it backtested
+# MAGIC - `fct_forecast` - one row per run × series × target week, with p10 / p50 / p90
 # MAGIC
 # MAGIC The naive baseline is written too (as its own model), so accuracy can be compared side by side.
 

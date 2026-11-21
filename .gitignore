@@ -1,4 +1,4 @@
-# Credentials — never commit these
+# Credentials - never commit these
 .databrickscfg
 .env
 *.env

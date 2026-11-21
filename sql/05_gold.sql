@@ -50,14 +50,14 @@ SELECT
   s.p90_lead_time_days,
   round(s.avg_days_late_when_late, 1)                   AS avg_days_late_when_late,
   round(s.lateness_trend, 2)                            AS lateness_trend_days_per_month,
-  CASE WHEN s.on_time_rate >= 0.50 THEN 'A'
-       WHEN s.on_time_rate >= 0.35 THEN 'B'
+  CASE WHEN s.on_time_rate >= 0.97 THEN 'A'
+       WHEN s.on_time_rate >= 0.90 THEN 'B'
        ELSE 'C' END                                     AS tier,
-  s.lateness_trend >= 1.0                               AS is_declining
+  s.lateness_trend >= 0.15                              AS is_declining
 FROM stats s
 JOIN workspace.ev_supply_chain.dim_supplier d USING (supplier_id);
 
--- parts where one supplier gets most of the money. ranked by how much spend is riding on that one supplier.
+-- parts where one supplier gets most of the money (most parts, in auto). ranked by how much spend rides on that one supplier.
 CREATE OR REPLACE TABLE workspace.ev_supply_chain.gold_single_source_risk AS
 WITH part_supplier_spend AS (
   SELECT part_id, supplier_id, sum(net_amount) AS spend
@@ -76,6 +76,7 @@ by_part AS (
 )
 SELECT
   b.part_id,
+  p.part_number,
   p.part_name,
   p.component_category,
   b.top_supplier_id,
@@ -89,7 +90,7 @@ SELECT
   -- a concentrated part is worse when the supplier you depend on is also unreliable
   sc.tier = 'C'                                     AS is_high_risk
 FROM by_part b
-JOIN workspace.ev_supply_chain.dim_part p USING (part_id)
+JOIN workspace.ev_supply_chain.dim_part_catalog p USING (part_id)
 JOIN workspace.ev_supply_chain.gold_supplier_scorecard sc ON sc.supplier_id = b.top_supplier_id
 WHERE b.top_supplier_spend / b.total_spend >= 0.80;
 
@@ -107,7 +108,7 @@ FROM workspace.ev_supply_chain.fct_po_lines_scenario f
 JOIN workspace.ev_supply_chain.dim_supplier d USING (supplier_id)
 GROUP BY d.region, d.country;
 
--- monthly trend by component category — this is where the chip shortage should jump out
+-- monthly trend by component category - this is where the chip shortage should jump out
 CREATE OR REPLACE TABLE workspace.ev_supply_chain.gold_monthly_performance AS
 SELECT
   date_trunc('MONTH', f.order_date)::date        AS order_month,
@@ -117,5 +118,5 @@ SELECT
   round(avg(f.is_on_time::int) * 100, 1)         AS on_time_pct,
   round(avg(f.lead_time_days), 1)                AS avg_lead_time_days
 FROM workspace.ev_supply_chain.fct_po_lines_scenario f
-JOIN workspace.ev_supply_chain.dim_part p USING (part_id)
+JOIN workspace.ev_supply_chain.dim_part_catalog p USING (part_id)
 GROUP BY 1, 2;

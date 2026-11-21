@@ -54,7 +54,7 @@ WITH plan AS (
 params AS (
   SELECT
     p.*,
-    pp.part_name, pp.component_category, pp.supplier_id, pp.supplier_name, pp.supplier_region,
+    pp.part_number, pp.part_name, pp.component_category, pp.supplier_id, pp.supplier_name, pp.supplier_region,
     pp.supplier_tier, pp.unit_cost, pp.buffer_class, pp.planning_lead_time_days,
     pp.lead_time_stddev_days, pp.review_period_days, pp.service_level_z, pp.pack_size,
     coalesce(i.snapshot_date, DATE'2026-11-21')                  AS snapshot_date,
@@ -97,6 +97,7 @@ SELECT
   snapshot_date,
   site_id,
   part_id,
+  part_number,
   part_name,
   component_category,
   demand_type,

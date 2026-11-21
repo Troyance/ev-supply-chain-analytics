@@ -4,12 +4,12 @@
 # MAGIC
 # MAGIC Takes the bronze tables and turns them into clean facts and dimensions:
 # MAGIC
-# MAGIC - `dim_supplier` – suppliers with their country and region
-# MAGIC - `dim_part` – parts, plus a made-up EV component category
-# MAGIC - `dim_part_supplier` – who's approved to supply what, and at what cost
-# MAGIC - `fct_po_lines` – one row per purchase order line, with lead time and lateness
+# MAGIC - `dim_supplier` - suppliers with their country and region
+# MAGIC - `dim_part` - parts, plus a made-up EV component category
+# MAGIC - `dim_part_supplier` - who's approved to supply what, and at what cost
+# MAGIC - `fct_po_lines` - one row per purchase order line, with lead time and lateness
 # MAGIC
-# MAGIC The tpch dates run 1992–1998, so everything gets shifted forward 28 years to land in 2020–2026.
+# MAGIC The tpch dates run 1992-1998, so everything gets shifted forward 28 years to land in 2020-2026.
 
 # COMMAND ----------
 
@@ -50,7 +50,7 @@ dim_supplier = (
     )
 )
 
-# nothing has actually run yet — spark is lazy. this is just a plan:
+# nothing has actually run yet - spark is lazy. this is just a plan:
 dim_supplier.explain()
 
 # COMMAND ----------
@@ -95,7 +95,7 @@ dim_part = (
 # MAGIC %md
 # MAGIC ## dim_part_supplier
 # MAGIC
-# MAGIC The approved supplier list — each part can be bought from a handful of suppliers at different costs.
+# MAGIC The approved supplier list - each part can be bought from a handful of suppliers at different costs.
 
 # COMMAND ----------
 
@@ -113,9 +113,9 @@ dim_part_supplier = bronze("partsupp").select(
 # MAGIC
 # MAGIC The big one (~30M rows). Joins line items to their order header to get the order date, then works out:
 # MAGIC
-# MAGIC - **lead_time_days** – order placed → goods received
-# MAGIC - **days_late** – promised (commit) date → received; negative means early
-# MAGIC - **is_on_time** – received on or before the promised date
+# MAGIC - **lead_time_days** - order placed → goods received
+# MAGIC - **days_late** - promised (commit) date → received; negative means early
+# MAGIC - **is_on_time** - received on or before the promised date
 
 # COMMAND ----------
 
@@ -150,7 +150,7 @@ fct_po_lines = (
 # MAGIC %md
 # MAGIC ## write everything out
 # MAGIC
-# MAGIC `saveAsTable` is the *action* — this is where spark actually runs the plans above.
+# MAGIC `saveAsTable` is the *action* - this is where spark actually runs the plans above.
 
 # COMMAND ----------
 

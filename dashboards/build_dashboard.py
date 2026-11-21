@@ -1,4 +1,4 @@
-"""builds dashboards/supply_chain.json — the ai/bi dashboard definition.
+"""builds dashboards/supply_chain.json - the ai/bi dashboard definition.
 run: python3 dashboards/build_dashboard.py"""
 import json, pathlib
 
@@ -54,7 +54,7 @@ datasets = [
      ]},
     {"name": "ds_risk_top", "displayName": "Top high-risk parts",
      "queryLines": sql(
-         "SELECT part_name, component_category, top_supplier_name, top_supplier_country,",
+         "SELECT part_number, part_name, component_category, top_supplier_name, top_supplier_country,",
          "       top_supplier_on_time_pct / 100 AS top_supplier_on_time, top_supplier_share_pct / 100 AS share, total_spend",
          "FROM gold_single_source_risk WHERE is_high_risk ORDER BY total_spend DESC LIMIT 200")},
     {"name": "ds_geo", "displayName": "Geography",
@@ -85,7 +85,7 @@ datasets = [
      ]},
     {"name": "ds_signals", "displayName": "Buy signals",
      "queryLines": sql(
-         "SELECT site_id, part_id, part_name, component_category, buffer_class, supplier_name, supplier_region AS region,",
+         "SELECT site_id, part_id, part_number, part_name, component_category, buffer_class, supplier_name, supplier_region AS region,",
          "       supplier_tier, daily_run_rate, planning_lead_time_days, safety_stock_days, days_of_cover,",
          "       on_hand_qty, on_order_qty, reorder_point, signal, suggested_order_qty, suggested_order_value,",
          "       projected_stockout_date, expected_receipt_date,",
@@ -166,14 +166,17 @@ def page(name, display, layout):
 
 BAD, WARN, GOOD, MUTED = "#E15759", "#F28E2C", "#59A14F", "#9AA5B1"
 month = ("monthly(order_month)", 'DATE_TRUNC("MONTH", `order_month`)', "temporal", "Order month")
-chip_shortage = [{"type": "vertical-line", "encodings": {
-    "x": {"dataValue": "2021-06-01T00:00:00.000", "dataType": "DATETIME"},
-    "label": {"value": "Chip shortage starts"}, "color": {"value": BAD}}}]
+def marker(date, label, color):
+    return {"type": "vertical-line", "encodings": {"x": {"dataValue": f"{date}T00:00:00.000", "dataType": "DATETIME"},
+                                                    "label": {"value": label}, "color": {"value": color}}}
+
+chip_shortage = [marker("2021-06-01", "Chip shortage starts", BAD), marker("2022-04-01", "Worst point", BAD),
+                 marker("2022-12-31", "Shortage over", GOOD)]
 
 # ---------- page 1: suppliers ----------
 suppliers = [
     text("title-suppliers", "# Supplier performance\nHow reliable the supplier base is, where it is slow, and who is getting worse. "
-         "Asia ships slowest and holds most tier C suppliers. Electronics lead times spiked during the 2021-22 chip shortage.", pos(0, 0, 12, 2)),
+         "Asia takes about 4x longer than north america. Electronics lead times and lateness spiked during the 2021-22 chip shortage.", pos(0, 0, 12, 2)),
     counter("kpi-spend", "ds_suppliers", "Total Spend", "Total spend", pos(0, 2, 3, 3), USD),
     counter("kpi-ontime", "ds_suppliers", "On-Time Rate", "On-time delivery", pos(3, 2, 3, 3), PCT),
     counter("kpi-suppliers", "ds_suppliers", "Suppliers", "Suppliers", pos(6, 2, 3, 3), {"type": "number-plain", "abbreviation": "compact", "decimalPlaces": {"type": "max", "places": 1}}),
@@ -206,7 +209,7 @@ suppliers = [
 # ---------- page 2: sourcing risk ----------
 risk = [
     text("title-risk", "# Sourcing risk\nParts where one supplier gets 80%+ of the spend. High risk means that supplier is also tier C. "
-         "Battery materials are almost entirely single-sourced.", pos(0, 0, 12, 2)),
+         "Most auto parts are single-sourced on purpose, so the question is which ones depend on an unreliable supplier.", pos(0, 0, 12, 2)),
     counter("kpi-single", "ds_risk", "Single-Sourced Parts", "Single-sourced parts", pos(0, 2, 4, 3), {"type": "number-plain", "abbreviation": "compact", "decimalPlaces": {"type": "max", "places": 1}}),
     counter("kpi-highrisk", "ds_risk", "High-Risk Parts", "High-risk parts", pos(4, 2, 4, 3), {"type": "number-plain", "abbreviation": "compact", "decimalPlaces": {"type": "max", "places": 1}}),
     counter("kpi-spend-risk", "ds_risk", "Spend at Risk", "Spend at risk", pos(8, 2, 4, 3), USD),
@@ -221,7 +224,7 @@ risk = [
           ("sum(spend)", "SUM(`spend`)", "quantitative", "Spend"),
           "Spend by supplier region", pos(6, 5, 6, 6)),
     table("risk-table", "ds_risk_top", [
-        ("part_name", "Part"), ("component_category", "Category"), ("top_supplier_name", "Supplier"),
+        ("part_number", "Part #"), ("part_name", "Part"), ("component_category", "Category"), ("top_supplier_name", "Supplier"),
         ("top_supplier_country", "Country"), ("top_supplier_on_time", "Supplier on-time", PCT),
         ("share", "Supplier share", PCT), ("total_spend", "Spend", USD)],
         "Biggest high-risk parts", pos(0, 11, 12, 7)),
@@ -259,7 +262,7 @@ planning = [
                  [{"value": "EXPEDITE", "color": BAD}, {"value": "ORDER", "color": WARN},
                   {"value": "OK", "color": GOOD}, {"value": "EXCESS", "color": MUTED}])),
     table("signals-table", "ds_signals", [
-        ("signal", "Signal"), ("site_id", "Site"), ("part_name", "Part"), ("component_category", "Category"),
+        ("signal", "Signal"), ("site_id", "Site"), ("part_number", "Part #"), ("part_name", "Part"), ("component_category", "Category"),
         ("buffer_class", "Buffer"), ("supplier_name", "Supplier"), ("daily_run_rate", "DRR", NUM),
         ("days_of_cover", "Days of cover", NUM), ("planning_lead_time_days", "Lead time (d)"),
         ("safety_stock_days", "Safety stock (d)", NUM), ("suggested_order_qty", "Order qty"),

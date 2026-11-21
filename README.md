@@ -2,7 +2,7 @@
 
 Side project for getting hands-on with Databricks. I'm using the TPC-H sample
 data that comes with every workspace and treating it like an EV maker's supply
-chain — suppliers, parts, purchase orders, and shipments with promised vs.
+chain - suppliers, parts, purchase orders, and shipments with promised vs.
 actual dates.
 
 The goal is to answer a few questions I'd expect a supply chain analytics team
@@ -17,11 +17,11 @@ to care about:
 
 Standard bronze / silver / gold layout, all in `workspace.ev_supply_chain`:
 
-- **bronze** – raw copies of the source tables
-- **silver** – cleaned up facts and dimensions
-- **scenarios** – tpch is perfectly uniform, so this adds some realistic mess on top
-  (late suppliers, a chip shortage, slower asia freight, etc.) — see `notebooks/02b_scenarios.py`
-- **gold** – the tables that actually answer the questions above
+- **bronze** - raw copies of the source tables
+- **silver** - cleaned up facts and dimensions
+- **scenarios** - tpch is perfectly uniform, so this adds some realistic mess on top
+  (late suppliers, a chip shortage, slower asia freight, etc.) - see `notebooks/02b_scenarios.py`
+- **gold** - the tables that actually answer the questions above
 
 Bronze and gold are SQL in `sql/`, silver and scenarios are PySpark notebooks in `notebooks/`.
 

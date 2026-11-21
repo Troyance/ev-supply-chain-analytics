@@ -1,10 +1,10 @@
 -- unity catalog docs for everything gold + the forecast tables.
 -- genie and ai/bi read these, so they are written for someone who has never seen the project.
 
-COMMENT ON SCHEMA workspace.ev_supply_chain IS 'Supply chain analytics for an electric vehicle manufacturer: supplier performance, sourcing risk, vehicle build and service parts forecasts, and replenishment buy signals. Source data is the TPC-H sample set reframed as purchasing data with synthetic planning data layered on top. Tables prefixed gold_ are the business-facing ones.';
+COMMENT ON SCHEMA workspace.ev_supply_chain IS 'Supply chain analytics for an electric vehicle manufacturer: supplier performance, sourcing risk, vehicle build and service parts forecasts, and replenishment buy signals. Supplier master data comes from the TPC-H sample set. Production, BOM, purchase orders and planning data are synthetic but calibrated to a realistic EV maker (about 95k vehicles a year, about $45k of parts per vehicle, about 93 percent supplier on-time delivery). Tables prefixed gold_ are the business-facing ones.';
 
 -- supplier scorecard
-COMMENT ON TABLE workspace.ev_supply_chain.gold_supplier_scorecard IS 'One row per supplier. Delivery reliability (on-time rate, lead time and its variability), total spend, a reliability tier, and whether the supplier is getting worse. Built from all purchase order lines 2020-2026. Use this to rank suppliers or find ones that need attention.';
+COMMENT ON TABLE workspace.ev_supply_chain.gold_supplier_scorecard IS 'One row per supplier. Delivery reliability (on-time rate, lead time and its variability), total spend, a reliability tier, and whether the supplier is getting worse. Built from all purchase order delivery lines since production started in 2021. Use this to rank suppliers or find ones that need attention.';
 ALTER TABLE workspace.ev_supply_chain.gold_supplier_scorecard ALTER COLUMN supplier_id COMMENT 'Supplier key. Joins to supplier_id in other tables.';
 ALTER TABLE workspace.ev_supply_chain.gold_supplier_scorecard ALTER COLUMN supplier_name COMMENT 'Supplier display name, e.g. Supplier#000012345.';
 ALTER TABLE workspace.ev_supply_chain.gold_supplier_scorecard ALTER COLUMN country COMMENT 'Country the supplier ships from.';
@@ -19,14 +19,15 @@ ALTER TABLE workspace.ev_supply_chain.gold_supplier_scorecard ALTER COLUMN avg_l
 ALTER TABLE workspace.ev_supply_chain.gold_supplier_scorecard ALTER COLUMN lead_time_stddev COMMENT 'Standard deviation of lead time in days. Higher means less predictable deliveries, which drives safety stock up.';
 ALTER TABLE workspace.ev_supply_chain.gold_supplier_scorecard ALTER COLUMN p90_lead_time_days COMMENT '90th percentile lead time in days - a realistic worst case.';
 ALTER TABLE workspace.ev_supply_chain.gold_supplier_scorecard ALTER COLUMN avg_days_late_when_late COMMENT 'For late lines only, the average number of days past the promised date.';
-ALTER TABLE workspace.ev_supply_chain.gold_supplier_scorecard ALTER COLUMN lateness_trend_days_per_month COMMENT 'Slope of days late over the last 24 months: how many more days late the supplier gets each month. Around 0 is stable, positive is getting worse.';
-ALTER TABLE workspace.ev_supply_chain.gold_supplier_scorecard ALTER COLUMN tier COMMENT 'Reliability tier from overall on-time rate: A (50 percent or better), B (35-50), C (under 35).';
-ALTER TABLE workspace.ev_supply_chain.gold_supplier_scorecard ALTER COLUMN is_declining COMMENT 'True when the supplier is getting at least 1 day later per month (lateness_trend_days_per_month >= 1). The main early-warning flag.';
+ALTER TABLE workspace.ev_supply_chain.gold_supplier_scorecard ALTER COLUMN lateness_trend_days_per_month COMMENT 'Slope of days late over the last 24 months: how many more days late the supplier gets each month, averaged over all deliveries. Around 0 is stable, positive is getting worse.';
+ALTER TABLE workspace.ev_supply_chain.gold_supplier_scorecard ALTER COLUMN tier COMMENT 'Reliability tier from overall on-time rate: A (97 percent or better), B (90-97), C (under 90).';
+ALTER TABLE workspace.ev_supply_chain.gold_supplier_scorecard ALTER COLUMN is_declining COMMENT 'True when the supplier is getting at least 0.15 days later per month on average (lateness_trend_days_per_month >= 0.15). The main early-warning flag.';
 
 -- single source risk
-COMMENT ON TABLE workspace.ev_supply_chain.gold_single_source_risk IS 'One row per part where a single supplier gets 80 percent or more of the spend. Shows the dependent supplier and how reliable they are. is_high_risk marks parts that are both concentrated and depend on a tier C supplier. Battery materials dominate this table.';
+COMMENT ON TABLE workspace.ev_supply_chain.gold_single_source_risk IS 'One row per part where a single supplier gets 80 percent or more of the spend. Shows the dependent supplier and how reliable they are. is_high_risk marks parts that are both concentrated and depend on a tier C supplier. Most auto parts are single-sourced on purpose (tooling is expensive), so the useful question is which of them depend on an unreliable supplier.';
 ALTER TABLE workspace.ev_supply_chain.gold_single_source_risk ALTER COLUMN part_id COMMENT 'Part key.';
-ALTER TABLE workspace.ev_supply_chain.gold_single_source_risk ALTER COLUMN part_name COMMENT 'Part description.';
+ALTER TABLE workspace.ev_supply_chain.gold_single_source_risk ALTER COLUMN part_number COMMENT 'Part number, prefixed by category: BAT, ELE, WIR, BDY, FST.';
+ALTER TABLE workspace.ev_supply_chain.gold_single_source_risk ALTER COLUMN part_name COMMENT 'Part description, e.g. Cell module or Flange bolt M8x25.';
 ALTER TABLE workspace.ev_supply_chain.gold_single_source_risk ALTER COLUMN component_category COMMENT 'Component category: Battery materials, Electronics, Wiring & harnesses, Body & chassis, Fasteners & fittings.';
 ALTER TABLE workspace.ev_supply_chain.gold_single_source_risk ALTER COLUMN top_supplier_id COMMENT 'The supplier that receives most of the spend for this part.';
 ALTER TABLE workspace.ev_supply_chain.gold_single_source_risk ALTER COLUMN top_supplier_name COMMENT 'Name of the dominant supplier.';
@@ -49,8 +50,8 @@ ALTER TABLE workspace.ev_supply_chain.gold_spend_by_geography ALTER COLUMN avg_l
 ALTER TABLE workspace.ev_supply_chain.gold_spend_by_geography ALTER COLUMN on_time_pct COMMENT 'Percent of lines received on time, 0-100.';
 
 -- monthly performance
-COMMENT ON TABLE workspace.ev_supply_chain.gold_monthly_performance IS 'One row per order month and component category. Volume, spend, on-time rate and lead time over time. The 2021-2022 chip shortage shows up as a lead time spike for Electronics.';
-ALTER TABLE workspace.ev_supply_chain.gold_monthly_performance ALTER COLUMN order_month COMMENT 'First day of the month the orders were placed.';
+COMMENT ON TABLE workspace.ev_supply_chain.gold_monthly_performance IS 'One row per order month and component category. Volume, spend, on-time rate and lead time over time. The chip shortage (June 2021 to December 2022, worst around April 2022) shows up as longer lead times and lower on-time rates for Electronics.';
+ALTER TABLE workspace.ev_supply_chain.gold_monthly_performance ALTER COLUMN order_month COMMENT 'First day of the month the orders were placed. Electronics ordered from mid 2021 to end of 2022 were hit by the chip shortage.';
 ALTER TABLE workspace.ev_supply_chain.gold_monthly_performance ALTER COLUMN component_category COMMENT 'Component category.';
 ALTER TABLE workspace.ev_supply_chain.gold_monthly_performance ALTER COLUMN po_lines COMMENT 'Number of PO lines ordered in the month.';
 ALTER TABLE workspace.ev_supply_chain.gold_monthly_performance ALTER COLUMN spend COMMENT 'Spend in USD.';
@@ -123,6 +124,7 @@ COMMENT ON TABLE workspace.ev_supply_chain.gold_buy_signals IS 'Replenishment re
 ALTER TABLE workspace.ev_supply_chain.gold_buy_signals ALTER COLUMN snapshot_date COMMENT 'Date of the inventory snapshot the signals are based on.';
 ALTER TABLE workspace.ev_supply_chain.gold_buy_signals ALTER COLUMN site_id COMMENT 'PLT1 (Plant 1 Midwest), PLT2 (Plant 2 Southeast) or SDC1 (Service Parts DC).';
 ALTER TABLE workspace.ev_supply_chain.gold_buy_signals ALTER COLUMN part_id COMMENT 'Part key.';
+ALTER TABLE workspace.ev_supply_chain.gold_buy_signals ALTER COLUMN part_number COMMENT 'Part number, prefixed by category: BAT, ELE, WIR, BDY, FST.';
 ALTER TABLE workspace.ev_supply_chain.gold_buy_signals ALTER COLUMN part_name COMMENT 'Part description.';
 ALTER TABLE workspace.ev_supply_chain.gold_buy_signals ALTER COLUMN component_category COMMENT 'Component category.';
 ALTER TABLE workspace.ev_supply_chain.gold_buy_signals ALTER COLUMN demand_type COMMENT 'dependent (plant, from builds x BOM) or independent (service parts).';
@@ -152,3 +154,35 @@ ALTER TABLE workspace.ev_supply_chain.gold_buy_signals ALTER COLUMN suggested_or
 ALTER TABLE workspace.ev_supply_chain.gold_buy_signals ALTER COLUMN expected_receipt_date COMMENT 'When an order placed today should arrive.';
 ALTER TABLE workspace.ev_supply_chain.gold_buy_signals ALTER COLUMN unit_cost COMMENT 'Unit cost from the main supplier, USD.';
 ALTER TABLE workspace.ev_supply_chain.gold_buy_signals ALTER COLUMN pack_size COMMENT 'Order multiple - orders are rounded up to this.';
+
+-- master data from production and purchasing
+COMMENT ON TABLE workspace.ev_supply_chain.dim_part_catalog IS 'One row per part used in the vehicles (about 1,900). Part number, name, category and standard cost. Standard costs are calibrated so a vehicle BOM comes to about $45k.';
+ALTER TABLE workspace.ev_supply_chain.dim_part_catalog ALTER COLUMN part_id COMMENT 'Part key.';
+ALTER TABLE workspace.ev_supply_chain.dim_part_catalog ALTER COLUMN part_number COMMENT 'Part number, prefixed by category: BAT, ELE, WIR, BDY, FST.';
+ALTER TABLE workspace.ev_supply_chain.dim_part_catalog ALTER COLUMN part_name COMMENT 'Part description.';
+ALTER TABLE workspace.ev_supply_chain.dim_part_catalog ALTER COLUMN component_category COMMENT 'Battery materials, Electronics, Wiring & harnesses, Body & chassis, or Fasteners & fittings.';
+ALTER TABLE workspace.ev_supply_chain.dim_part_catalog ALTER COLUMN standard_cost COMMENT 'Standard unit cost in USD.';
+
+COMMENT ON TABLE workspace.ev_supply_chain.dim_sourcing IS 'Which supplier provides each part. One primary row per part, plus a secondary row for the roughly 13 percent of parts that are dual-sourced. volume_share is the split of deliveries.';
+ALTER TABLE workspace.ev_supply_chain.dim_sourcing ALTER COLUMN part_id COMMENT 'Part key.';
+ALTER TABLE workspace.ev_supply_chain.dim_sourcing ALTER COLUMN supplier_id COMMENT 'Supplier key.';
+ALTER TABLE workspace.ev_supply_chain.dim_sourcing ALTER COLUMN sourcing_role COMMENT 'primary or secondary.';
+ALTER TABLE workspace.ev_supply_chain.dim_sourcing ALTER COLUMN volume_share COMMENT 'Share of the part volume this supplier gets, 0-1. 1.0 for single-sourced parts, 0.7 and 0.3 for dual-sourced.';
+ALTER TABLE workspace.ev_supply_chain.dim_sourcing ALTER COLUMN unit_price COMMENT 'Price paid per unit in USD. Second sources cost about 8 percent more.';
+
+COMMENT ON TABLE workspace.ev_supply_chain.fct_po_lines_scenario IS 'Purchase order delivery lines, one row per delivery. Generated from the build schedule: weekly requirement = builds x BOM quantity, delivered daily by local body and wiring suppliers and weekly by everyone else. This is the fact table behind the supplier scorecard.';
+ALTER TABLE workspace.ev_supply_chain.fct_po_lines_scenario ALTER COLUMN po_line_id COMMENT 'Delivery line key.';
+ALTER TABLE workspace.ev_supply_chain.fct_po_lines_scenario ALTER COLUMN site_id COMMENT 'Plant receiving the delivery: PLT1 or PLT2.';
+ALTER TABLE workspace.ev_supply_chain.fct_po_lines_scenario ALTER COLUMN part_id COMMENT 'Part key.';
+ALTER TABLE workspace.ev_supply_chain.fct_po_lines_scenario ALTER COLUMN supplier_id COMMENT 'Supplier key.';
+ALTER TABLE workspace.ev_supply_chain.fct_po_lines_scenario ALTER COLUMN sourcing_role COMMENT 'primary or secondary source for the part.';
+ALTER TABLE workspace.ev_supply_chain.fct_po_lines_scenario ALTER COLUMN quantity COMMENT 'Units delivered.';
+ALTER TABLE workspace.ev_supply_chain.fct_po_lines_scenario ALTER COLUMN net_amount COMMENT 'quantity x unit price, USD.';
+ALTER TABLE workspace.ev_supply_chain.fct_po_lines_scenario ALTER COLUMN order_date COMMENT 'When the order was placed (promised date minus quoted lead time).';
+ALTER TABLE workspace.ev_supply_chain.fct_po_lines_scenario ALTER COLUMN ship_date COMMENT 'When the goods left the supplier.';
+ALTER TABLE workspace.ev_supply_chain.fct_po_lines_scenario ALTER COLUMN promised_date COMMENT 'Date the supplier committed to deliver.';
+ALTER TABLE workspace.ev_supply_chain.fct_po_lines_scenario ALTER COLUMN received_date COMMENT 'Date the goods actually arrived.';
+ALTER TABLE workspace.ev_supply_chain.fct_po_lines_scenario ALTER COLUMN ship_mode COMMENT 'Truck or Rail for north american suppliers, Ship for everyone else.';
+ALTER TABLE workspace.ev_supply_chain.fct_po_lines_scenario ALTER COLUMN lead_time_days COMMENT 'Days from order to receipt.';
+ALTER TABLE workspace.ev_supply_chain.fct_po_lines_scenario ALTER COLUMN days_late COMMENT 'Received minus promised, in days. Negative or zero is on time.';
+ALTER TABLE workspace.ev_supply_chain.fct_po_lines_scenario ALTER COLUMN is_on_time COMMENT 'True when received on or before the promised date.';

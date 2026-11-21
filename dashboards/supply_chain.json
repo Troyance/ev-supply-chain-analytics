@@ -98,7 +98,7 @@
    "name": "ds_risk_top",
    "displayName": "Top high-risk parts",
    "queryLines": [
-    "SELECT part_name, component_category, top_supplier_name, top_supplier_country,\n",
+    "SELECT part_number, part_name, component_category, top_supplier_name, top_supplier_country,\n",
     "       top_supplier_on_time_pct / 100 AS top_supplier_on_time, top_supplier_share_pct / 100 AS share, total_spend\n",
     "FROM gold_single_source_risk WHERE is_high_risk ORDER BY total_spend DESC LIMIT 200\n"
    ]
@@ -153,7 +153,7 @@
    "name": "ds_signals",
    "displayName": "Buy signals",
    "queryLines": [
-    "SELECT site_id, part_id, part_name, component_category, buffer_class, supplier_name, supplier_region AS region,\n",
+    "SELECT site_id, part_id, part_number, part_name, component_category, buffer_class, supplier_name, supplier_region AS region,\n",
     "       supplier_tier, daily_run_rate, planning_lead_time_days, safety_stock_days, days_of_cover,\n",
     "       on_hand_qty, on_order_qty, reorder_point, signal, suggested_order_qty, suggested_order_value,\n",
     "       projected_stockout_date, expected_receipt_date,\n",
@@ -191,7 +191,7 @@
       "name": "title-suppliers",
       "multilineTextboxSpec": {
        "lines": [
-        "# Supplier performance\nHow reliable the supplier base is, where it is slow, and who is getting worse. Asia ships slowest and holds most tier C suppliers. Electronics lead times spiked during the 2021-22 chip shortage."
+        "# Supplier performance\nHow reliable the supplier base is, where it is slow, and who is getting worse. Asia takes about 4x longer than north america. Electronics lead times and lateness spiked during the 2021-22 chip shortage."
        ]
       }
      },
@@ -462,6 +462,36 @@
           },
           "color": {
            "value": "#E15759"
+          }
+         }
+        },
+        {
+         "type": "vertical-line",
+         "encodings": {
+          "x": {
+           "dataValue": "2022-04-01T00:00:00.000",
+           "dataType": "DATETIME"
+          },
+          "label": {
+           "value": "Worst point"
+          },
+          "color": {
+           "value": "#E15759"
+          }
+         }
+        },
+        {
+         "type": "vertical-line",
+         "encodings": {
+          "x": {
+           "dataValue": "2022-12-31T00:00:00.000",
+           "dataType": "DATETIME"
+          },
+          "label": {
+           "value": "Shortage over"
+          },
+          "color": {
+           "value": "#59A14F"
           }
          }
         }
@@ -809,7 +839,7 @@
       "name": "title-risk",
       "multilineTextboxSpec": {
        "lines": [
-        "# Sourcing risk\nParts where one supplier gets 80%+ of the spend. High risk means that supplier is also tier C. Battery materials are almost entirely single-sourced."
+        "# Sourcing risk\nParts where one supplier gets 80%+ of the spend. High risk means that supplier is also tier C. Most auto parts are single-sourced on purpose, so the question is which ones depend on an unreliable supplier."
        ]
       }
      },
@@ -1107,6 +1137,10 @@
          "datasetName": "ds_risk_top",
          "fields": [
           {
+           "name": "part_number",
+           "expression": "`part_number`"
+          },
+          {
            "name": "part_name",
            "expression": "`part_name`"
           },
@@ -1144,6 +1178,10 @@
        "widgetType": "table",
        "encodings": {
         "columns": [
+         {
+          "fieldName": "part_number",
+          "displayName": "Part #"
+         },
          {
           "fieldName": "part_name",
           "displayName": "Part"
@@ -1631,6 +1669,10 @@
            "expression": "`site_id`"
           },
           {
+           "name": "part_number",
+           "expression": "`part_number`"
+          },
+          {
            "name": "part_name",
            "expression": "`part_name`"
           },
@@ -1705,6 +1747,10 @@
          {
           "fieldName": "site_id",
           "displayName": "Site"
+         },
+         {
+          "fieldName": "part_number",
+          "displayName": "Part #"
          },
          {
           "fieldName": "part_name",
