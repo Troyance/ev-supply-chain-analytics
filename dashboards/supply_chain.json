@@ -2923,6 +2923,11 @@
     "#59A14F"
    ],
    "widgetHeaderAlignment": "LEFT"
+  },
+  "genieSpace": {
+   "isEnabled": true,
+   "overrideId": "01f1e5daf5b31e998a82f354647524ec",
+   "enablementMode": "ENABLED"
   }
  }
 }

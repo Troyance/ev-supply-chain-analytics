@@ -1,0 +1,244 @@
+{
+ "version": 2,
+ "config": {
+  "sample_questions": [
+   {
+    "id": "01f226d4c386c331fdc0c9b4cee37dd1",
+    "question": [
+     "Which ordering policy is cheapest at Plant 2?"
+    ]
+   },
+   {
+    "id": "21089b85f5cbd5f6ad5e9ec284dc0c1d",
+    "question": [
+     "How accurate is the vehicle build forecast 13 weeks out?"
+    ]
+   },
+   {
+    "id": "5322ead0835003295729292f78408df0",
+    "question": [
+     "Which single-sourced parts depend on a tier C supplier?"
+    ]
+   },
+   {
+    "id": "61139ec8ac1267cd582f0b3fcecc5609",
+    "question": [
+     "What should we expedite today?"
+    ]
+   },
+   {
+    "id": "7fab083159325780a0cb23c7a45c1070",
+    "question": [
+     "Which suppliers are getting worse?"
+    ]
+   },
+   {
+    "id": "bdf8dbc7153bb78c109458ef6ccbb6bc",
+    "question": [
+     "What is our on-time delivery by supplier region this year?"
+    ]
+   }
+  ]
+ },
+ "data_sources": {
+  "metric_views": [
+   {
+    "identifier": "workspace.ev_gold.forecast_accuracy_metrics"
+   },
+   {
+    "identifier": "workspace.ev_gold.inventory_planning_metrics"
+   },
+   {
+    "identifier": "workspace.ev_gold.policy_simulation_metrics"
+   },
+   {
+    "identifier": "workspace.ev_gold.sourcing_risk_metrics"
+   },
+   {
+    "identifier": "workspace.ev_gold.supplier_delivery_metrics"
+   }
+  ],
+  "tables": [
+   {
+    "identifier": "workspace.ev_gold.mart_buy_signals",
+    "column_configs": [
+     {
+      "column_name": "buffer_class",
+      "enable_format_assistance": true,
+      "enable_entity_matching": true
+     },
+     {
+      "column_name": "signal",
+      "enable_format_assistance": true,
+      "enable_entity_matching": true
+     },
+     {
+      "column_name": "site_id",
+      "enable_format_assistance": true,
+      "enable_entity_matching": true
+     }
+    ]
+   },
+   {
+    "identifier": "workspace.ev_gold.mart_supplier_scorecard",
+    "column_configs": [
+     {
+      "column_name": "region",
+      "enable_format_assistance": true,
+      "enable_entity_matching": true
+     },
+     {
+      "column_name": "tier",
+      "enable_format_assistance": true,
+      "enable_entity_matching": true
+     }
+    ]
+   }
+  ]
+ },
+ "instructions": {
+  "text_instructions": [
+   {
+    "id": "cbde2df6a7c89370edc449dc5705d30c",
+    "content": [
+     "This space covers the supply chain of an EV maker: 3 vehicle models (PU pickup, SUV, VAN delivery van), two plants (PLT1 Midwest, PLT2 Southeast - PLT2 launched in March 2026 and is still ramping) and a service parts DC (SDC1).",
+     "Always use MEASURE() on the metric views for rates and averages (On-Time Rate, WAPE, Stockout Rate, Days of Cover). They are ratios of sums - never average a percentage column.",
+     "On time means received on or before the promised date. Automakers expect 95%+ on-time delivery.",
+     "Supplier tiers: A 97%+ on time, B 90-97%, C under 90%, Unrated = not enough history. In supplier_delivery_metrics, Supplier Tier is the tier at the time of delivery; Current Supplier Tier is today's.",
+     "A declining supplier is one getting at least 0.15 days later every month over the last 24 months (is_declining).",
+     "Most auto parts are single-sourced on purpose. High risk means single-sourced from a tier C supplier.",
+     "Buffer classes: JIT (local body and wiring, daily deliveries, half a day of buffer), KANBAN (local fasteners, min/max), STANDARD (95% service level), STRATEGIC (battery materials and electronics, 99% service level).",
+     "Buy signals: EXPEDITE = on hand below safety stock, ORDER = inventory position below the reorder point, EXCESS = over twice the max. DRR = daily run rate (forecast average daily usage).",
+     "The chip shortage ran June 2021 to December 2022, worst around April 2022. It shows up in Electronics by Order Month.",
+     "Ordering policies were simulated over the last 52 weeks with the same demand and late deliveries: Current, Lean, High service, EOQ, DDMRP, MRP (schedule). Lead with Stockout Rate (share of parts that ran out at least once) and Total Cost; unit fill rate always looks high because cheap high-volume parts dominate it.",
+     "Forecast accuracy compares LightGBM with a naive baseline. Lower WAPE is better. 'This year' means calendar 2026."
+    ]
+   }
+  ],
+  "example_question_sqls": [
+   {
+    "id": "397d25ba7b1965d9d49c89685a5af2b6",
+    "question": [
+     "How did electronics lead times change during the chip shortage?"
+    ],
+    "sql": [
+     "SELECT `Order Month`, MEASURE(`Avg Lead Time Days`) AS avg_lead_time_days, MEASURE(`On-Time Rate`) AS on_time_rate\nFROM workspace.ev_gold.supplier_delivery_metrics WHERE `Component Category` = 'Electronics' GROUP BY ALL ORDER BY `Order Month`"
+    ]
+   },
+   {
+    "id": "50705c375e562a0577e2cd82efc73f2c",
+    "question": [
+     "What should we expedite today?"
+    ],
+    "sql": [
+     "SELECT site_id, part_number, part_name, supplier_name, days_of_cover, safety_stock_days, suggested_order_qty, suggested_order_value\nFROM workspace.ev_gold.mart_buy_signals WHERE signal = 'EXPEDITE' ORDER BY suggested_order_value DESC LIMIT 50"
+    ]
+   },
+   {
+    "id": "8b2bbc074978b878999b8debf22cb6a8",
+    "question": [
+     "How accurate is the forecast by horizon?"
+    ],
+    "sql": [
+     "SELECT `Forecast Type`, `Model`, `Horizon Weeks`, MEASURE(`WAPE`) AS wape\nFROM workspace.ev_gold.forecast_accuracy_metrics GROUP BY ALL ORDER BY `Forecast Type`, `Horizon Weeks`, `Model`"
+    ]
+   },
+   {
+    "id": "8f755c764e1f96c83b861f5501224c39",
+    "question": [
+     "Which suppliers are getting worse?"
+    ],
+    "sql": [
+     "SELECT supplier_name, country, tier, lateness_trend_days_per_month, on_time_rate_prior_12m, on_time_rate_last_12m, spend\nFROM workspace.ev_gold.mart_supplier_scorecard WHERE is_declining ORDER BY lateness_trend_days_per_month DESC"
+    ]
+   },
+   {
+    "id": "978d0252de70ede71536f4a729ea6410",
+    "question": [
+     "How much spend is at risk by category?"
+    ],
+    "sql": [
+     "SELECT `Component Category`, MEASURE(`High-Risk Parts`) AS high_risk_parts, MEASURE(`Spend at Risk`) AS spend_at_risk\nFROM workspace.ev_gold.sourcing_risk_metrics GROUP BY ALL ORDER BY spend_at_risk DESC"
+    ]
+   },
+   {
+    "id": "a272e108888b8d15f042849de03af70a",
+    "question": [
+     "What is on-time delivery by supplier region?"
+    ],
+    "sql": [
+     "SELECT `Supplier Region`, MEASURE(`On-Time Rate`) AS on_time_rate, MEASURE(`Delivery Lines`) AS deliveries\nFROM workspace.ev_gold.supplier_delivery_metrics GROUP BY ALL ORDER BY on_time_rate"
+    ]
+   },
+   {
+    "id": "c8386085c33538d904275e9de397f5f8",
+    "question": [
+     "Which ordering policy is cheapest at each site?"
+    ],
+    "sql": [
+     "SELECT `Site`, `Policy`, MEASURE(`Total Cost`) AS total_cost, MEASURE(`Stockout Rate`) AS stockout_rate,\n       MEASURE(`Avg Inventory Value`) AS avg_inventory_value\nFROM workspace.ev_gold.policy_simulation_metrics GROUP BY ALL ORDER BY `Site`, total_cost"
+    ]
+   }
+  ]
+ },
+ "benchmarks": {
+  "questions": [
+   {
+    "id": "1e602ba926428842569a48eda8bf8a58",
+    "question": [
+     "What is on-time delivery by supplier region?"
+    ],
+    "answer": [
+     {
+      "format": "SQL",
+      "content": [
+       "SELECT `Supplier Region`, MEASURE(`On-Time Rate`) AS on_time_rate, MEASURE(`Delivery Lines`) AS deliveries\nFROM workspace.ev_gold.supplier_delivery_metrics GROUP BY ALL ORDER BY on_time_rate"
+      ]
+     }
+    ]
+   },
+   {
+    "id": "793a4fc4a75666a4ac3cf339b1263598",
+    "question": [
+     "How much spend is at risk by category?"
+    ],
+    "answer": [
+     {
+      "format": "SQL",
+      "content": [
+       "SELECT `Component Category`, MEASURE(`High-Risk Parts`) AS high_risk_parts, MEASURE(`Spend at Risk`) AS spend_at_risk\nFROM workspace.ev_gold.sourcing_risk_metrics GROUP BY ALL ORDER BY spend_at_risk DESC"
+      ]
+     }
+    ]
+   },
+   {
+    "id": "8cdbbcce774fe1ddae00572bb709f371",
+    "question": [
+     "Which suppliers are getting worse?"
+    ],
+    "answer": [
+     {
+      "format": "SQL",
+      "content": [
+       "SELECT supplier_name, country, tier, lateness_trend_days_per_month, on_time_rate_prior_12m, on_time_rate_last_12m, spend\nFROM workspace.ev_gold.mart_supplier_scorecard WHERE is_declining ORDER BY lateness_trend_days_per_month DESC"
+      ]
+     }
+    ]
+   },
+   {
+    "id": "b4f452f9c26f1d099ed84dd1387d2944",
+    "question": [
+     "How did electronics lead times change during the chip shortage?"
+    ],
+    "answer": [
+     {
+      "format": "SQL",
+      "content": [
+       "SELECT `Order Month`, MEASURE(`Avg Lead Time Days`) AS avg_lead_time_days, MEASURE(`On-Time Rate`) AS on_time_rate\nFROM workspace.ev_gold.supplier_delivery_metrics WHERE `Component Category` = 'Electronics' GROUP BY ALL ORDER BY `Order Month`"
+      ]
+     }
+    ]
+   }
+  ]
+ }
+}

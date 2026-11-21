@@ -259,7 +259,10 @@ dashboard = {
         "fontColor": {"light": "#11171C", "dark": "#E8ECF0"},
         "selectionColor": {"light": "#2272B4", "dark": "#8ACAFF"},
         "visualizationColors": ["#4E79A7", "#F28E2C", "#76B7B2", "#B07AA1", "#EDC948", "#9C755F", "#59A14F"],
-        "widgetHeaderAlignment": "LEFT"}},
+        "widgetHeaderAlignment": "LEFT"},
+        # "ask genie" button on the dashboard, pointing at the EV Supply Chain Analyst agent (genie/build_genie.py)
+        "genieSpace": {"isEnabled": True, "overrideId": (pathlib.Path(__file__).parent.parent / "genie" / ".space_id").read_text().strip(),
+                       "enablementMode": "ENABLED"}},
 }
 
 out = pathlib.Path(__file__).with_name("supply_chain.json")
