@@ -1,3 +1,4 @@
+{{ config(tags=['simulation']) }}
 select
     policy   as policy_id,
     site_id,
@@ -8,4 +9,4 @@ select
     receipts as received_units,
     order_qty as ordered_units,
     unmet    as short_units
-from {{ source('ml', 'gold_policy_simulation_daily') }}
+from {{ source('sim', 'sim_policy_daily') }}

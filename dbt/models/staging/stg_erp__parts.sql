@@ -4,4 +4,4 @@ select
     part_name,
     component_category,
     cast(standard_cost as decimal(18, 4))  as standard_cost
-from {{ source('erp', 'dim_part_catalog') }}
+from {{ source('erp', 'erp_parts') }}

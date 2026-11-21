@@ -12,9 +12,7 @@
 # MAGIC Spark-wise this is a grouped map: `groupBy(site, part).applyInPandas(simulate)` runs one small pandas
 # MAGIC simulation per part, spread across the workers.
 # MAGIC
-# MAGIC Outputs:
-# MAGIC - `gold_inventory_projection` – one row per site, part and day
-# MAGIC - `gold_inventory_projection_summary` – one row per site and part: lowest point, stockout days, fill rate
+# MAGIC Output: `ev_bronze.sim_inventory_projection`, one row per site, part and day. dbt builds the per-part summary.
 
 # COMMAND ----------
 
@@ -23,19 +21,22 @@ import numpy as np
 import pandas as pd
 from pyspark.sql import functions as F
 
-SCHEMA = "workspace.ev_supply_chain"
+BRONZE = "workspace.ev_bronze"
+GOLD = "workspace.ev_gold"
 HORIZON_DAYS = 91
 
-signals = spark.table(f"{SCHEMA}.gold_buy_signals").filter("daily_run_rate > 0")
-plan = spark.table(f"{SCHEMA}.gold_part_demand_plan").select("site_id", "part_id", "target_week", "demand_p50")
-reliability = spark.table(f"{SCHEMA}.gold_supplier_scorecard").select(
-    "supplier_id", (F.col("on_time_pct") / 100).alias("on_time_rate"),
-    F.coalesce("avg_days_late_when_late", F.lit(0.0)).alias("days_late_when_late"))
+# reads the dbt marts, writes a raw simulation output that dbt picks up (tag: simulation)
+signals = spark.table(f"{GOLD}.mart_buy_signals").filter("daily_run_rate > 0")
+# the marts store quantities as decimal(18,2) - pandas wants floats
+plan = spark.table(f"{GOLD}.mart_part_demand_plan").select("site_id", "part_id", "target_week", F.col("demand_p50").cast("double").alias("demand_p50"))
+reliability = spark.table(f"{GOLD}.mart_supplier_scorecard").select(
+    "supplier_key", "on_time_rate", F.coalesce("avg_days_late_when_late", F.lit(0.0)).alias("days_late_when_late"))
 
-inputs = (plan.join(signals.select("site_id", "part_id", "snapshot_date", "supplier_id", "safety_stock", "reorder_point",
+inputs = (plan.join(signals.select("site_id", "part_id", "snapshot_date", "supplier_key", "safety_stock", "reorder_point",
                                    "order_up_to", "on_hand_qty", "on_order_qty", "planning_lead_time_days",
-                                   "review_period_days", "pack_size", "moq", "unit_cost"), ["site_id", "part_id"])
-          .join(reliability, "supplier_id", "left"))
+                                   "review_period_days", "pack_size", "moq", F.col("unit_price").cast("double").alias("unit_cost")),
+                    ["site_id", "part_id"])
+          .join(reliability, "supplier_key", "left"))
 
 # COMMAND ----------
 
@@ -89,40 +90,14 @@ def simulate(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=[c.split()[0] for c in OUT_SCHEMA.replace("\n", " ").split(",")])
 
 projection = inputs.groupBy("site_id", "part_id").applyInPandas(simulate, OUT_SCHEMA)
-projection.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{SCHEMA}.gold_inventory_projection")
-projection = spark.table(f"{SCHEMA}.gold_inventory_projection")
+projection.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{BRONZE}.sim_inventory_projection")
+projection = spark.table(f"{BRONZE}.sim_inventory_projection")
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## summary per part
-
-# COMMAND ----------
-
-summary = (projection.groupBy("site_id", "part_id")
-           .agg(F.min("on_hand").alias("min_on_hand"),
-                F.sum((F.col("on_hand") <= 0).cast("int")).alias("stockout_days"),
-                F.min(F.when(F.col("on_hand") <= 0, F.col("day"))).alias("first_stockout_date"),
-                F.sum((F.col("on_hand") < F.col("safety_stock")).cast("int")).alias("days_below_safety_stock"),
-                F.sum((F.col("order_placed") > 0).cast("int")).alias("orders_placed"),
-                F.avg(F.col("on_hand") * F.col("unit_cost")).alias("avg_inventory_value"),
-                (1 - F.sum("unmet_demand") / F.sum("demand")).alias("fill_rate"))
-           .join(spark.table(f"{SCHEMA}.gold_buy_signals").select(
-               "site_id", "part_id", "part_number", "part_name", "component_category", "buffer_class",
-               "supplier_name", "supplier_tier", "signal"), ["site_id", "part_id"]))
-
-summary.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{SCHEMA}.gold_inventory_projection_summary")
-summary = spark.table(f"{SCHEMA}.gold_inventory_projection_summary")
-
-by_class = (summary.groupBy("buffer_class")
-            .agg(F.count("*").alias("parts"), F.sum((F.col("stockout_days") > 0).cast("int")).alias("parts_with_stockout"),
-                 F.round(F.sum(F.col("fill_rate") * 1) / F.count("*"), 4).alias("avg_fill_rate"),
-                 F.round(F.avg("orders_placed"), 1).alias("avg_orders")).collect())
-result = {
-    "projection_rows": projection.count(),
-    "parts": summary.count(),
-    "by_buffer_class": {r.buffer_class: {"parts": r.parts, "parts_with_stockout": r.parts_with_stockout,
-                                         "avg_fill_rate": r.avg_fill_rate, "avg_orders": r.avg_orders} for r in by_class},
-}
+# the per-part summary (lowest point, stockout days, fill rate) is built in dbt: mart_inventory_projection_summary
+by_part = projection.groupBy("site_id", "part_id").agg(F.sum((F.col("on_hand") <= 0).cast("int")).alias("stockout_days"))
+result = {"projection_rows": projection.count(), "parts": by_part.count(),
+          "parts_with_projected_stockout": by_part.filter("stockout_days > 0").count()}
 print(json.dumps(result, indent=2))
 dbutils.notebook.exit(json.dumps(result))

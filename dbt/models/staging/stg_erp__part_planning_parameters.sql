@@ -7,4 +7,4 @@ select
     cast(service_level_z as double)           as service_level_z,
     cast(pack_size as bigint)                 as pack_size,
     cast(moq as bigint)                       as moq
-from {{ source('erp', 'dim_part_planning') }}
+from {{ source('erp', 'erp_part_planning_parameters') }}

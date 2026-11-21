@@ -15,13 +15,14 @@
 # MAGIC - the 2021-22 chip shortage hits electronics: longer quoted lead times and a lot more late deliveries
 # MAGIC - a handful of suppliers start slipping in 2024 and keep getting worse
 # MAGIC
-# MAGIC Outputs: `dim_active_supplier`, `dim_sourcing`, `fct_po_lines_scenario`.
+# MAGIC Outputs to `ev_bronze`: `erp_suppliers`, `erp_sourcing`, `erp_po_deliveries`. The supplier table also holds each
+# MAGIC supplier's true reliability (p_late, is_slipping). dbt staging drops those - analytics has to find them.
 
 # COMMAND ----------
 
 from pyspark.sql import functions as F, Window
 
-SCHEMA = "workspace.ev_supply_chain"
+BRONZE = "workspace.ev_bronze"      # bronze: source-system extracts, written by these notebooks
 SNAPSHOT_DATE = "2026-11-21"
 
 def bucket(*cols, n, salt):
@@ -32,8 +33,8 @@ def uniform(*cols, salt):
     return (bucket(*cols, n=1_000_000, salt=salt) + 0.5) / 1_000_000
 
 def save(df, name):
-    df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{SCHEMA}.{name}")
-    return spark.table(f"{SCHEMA}.{name}")
+    df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{BRONZE}.{name}")
+    return spark.table(f"{BRONZE}.{name}")
 
 region = F.col("region")
 
@@ -56,7 +57,13 @@ def shortage_severity(d):
 
 keep_one_in = F.when(region == "America", 20).when(region == "Asia", 50).when(region == "Europe", 100).otherwise(500)
 
-active = (spark.table(f"{SCHEMA}.dim_supplier")
+supplier_master = (spark.table(f"{BRONZE}.tpch_supplier")
+                   .join(spark.table(f"{BRONZE}.tpch_nation"), F.col("s_nationkey") == F.col("n_nationkey"))
+                   .join(spark.table(f"{BRONZE}.tpch_region"), F.col("n_regionkey") == F.col("r_regionkey"))
+                   .select(F.col("s_suppkey").alias("supplier_id"), F.trim("s_name").alias("supplier_name"),
+                           F.initcap("n_name").alias("country"), F.initcap("r_name").alias("region")))
+
+active = (supplier_master
           .filter(bucket("supplier_id", n=1_000_000, salt="active") * keep_one_in < 1_000_000)
           .withColumn("u", uniform("supplier_id", salt="profile")))
 
@@ -76,8 +83,8 @@ active = save(
                                   * (0.7 + 0.6 * uniform("supplier_id", salt="late")))
     .withColumn("is_slipping", bucket("supplier_id", n=100, salt="slip") == 0)
     .withColumn("region_idx", F.row_number().over(Window.partitionBy("region").orderBy(F.xxhash64("supplier_id"))) - 1)
-    .drop("u", "account_balance"),
-    "dim_active_supplier")
+    .drop("u"),
+    "erp_suppliers")
 
 region_counts = active.groupBy("region").count().withColumnRenamed("count", "region_n")
 
@@ -109,7 +116,7 @@ for cat, mix in REGION_MIX.items():
     cond = F.col("component_category") == cat
     pick_region = F.when(cond, expr) if pick_region is None else pick_region.when(cond, expr)
 
-catalog = spark.table(f"{SCHEMA}.dim_part_catalog")
+catalog = spark.table(f"{BRONZE}.erp_parts")
 
 def assign(df, salt):
     return (df.join(region_counts, "region")
@@ -135,7 +142,7 @@ sourcing = save(
         .select("part_id", F.col("secondary_id").alias("supplier_id"), F.lit("secondary").alias("sourcing_role"),
                 F.lit(0.3).alias("volume_share"),
                 (F.col("standard_cost") * 1.08).cast("decimal(14,4)").alias("unit_price"))),  # backup costs a bit more
-    "dim_sourcing")
+    "erp_sourcing")
 
 # COMMAND ----------
 
@@ -148,8 +155,8 @@ sourcing = save(
 
 # COMMAND ----------
 
-requirements = (spark.table(f"{SCHEMA}.fct_vehicle_builds")
-                .join(spark.table(f"{SCHEMA}.dim_bom"), "model_id")
+requirements = (spark.table(f"{BRONZE}.mes_vehicle_builds")
+                .join(spark.table(f"{BRONZE}.erp_bom"), "model_id")
                 .groupBy("site_id", "part_id", "week_start")
                 .agg(F.sum(F.col("units") * F.col("qty_per_vehicle")).alias("weekly_qty")))
 
@@ -200,7 +207,7 @@ po = save(
         F.datediff("received_date", "order_date").alias("lead_time_days"),
         F.col("days_late").cast("int").alias("days_late"),
         (F.col("days_late") <= 0).alias("is_on_time")),
-    "fct_po_lines_scenario")
+    "erp_po_deliveries")
 
 # COMMAND ----------
 

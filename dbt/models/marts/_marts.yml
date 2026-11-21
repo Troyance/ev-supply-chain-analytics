@@ -671,3 +671,88 @@ models:
         - policy_key
         - site_key
         - part_key
+- name: mart_inventory_projection_summary
+  description: 'One row per site x part: how the next 13 weeks look from today''s stock.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: site_key
+    data_type: string
+    description: Site.
+    constraints:
+    - type: not_null
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_site')
+          field: site_key
+  - name: part_key
+    data_type: string
+    description: Part.
+    constraints:
+    - type: not_null
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_part')
+          field: part_key
+  - name: site_id
+    data_type: string
+    description: Site id.
+  - name: part_id
+    data_type: bigint
+    description: Part id.
+  - name: part_number
+    data_type: string
+    description: Part number.
+  - name: part_name
+    data_type: string
+    description: Part description.
+  - name: component_category
+    data_type: string
+    description: Component category.
+  - name: buffer_class
+    data_type: string
+    description: Replenishment strategy.
+  - name: signal
+    data_type: string
+    description: Today's buy signal.
+  - name: supplier_name
+    data_type: string
+    description: Main supplier.
+  - name: supplier_tier
+    data_type: string
+    description: Main supplier tier.
+  - name: min_on_hand_units
+    data_type: decimal(18,2)
+    description: Lowest projected stock.
+  - name: projected_stockout_days
+    data_type: bigint
+    description: Days projected to be at zero.
+  - name: first_stockout_date
+    data_type: date
+    description: First projected day at zero.
+  - name: days_below_safety_stock
+    data_type: bigint
+    description: Days below safety stock.
+  - name: orders_placed
+    data_type: bigint
+    description: Orders the policy would place.
+  - name: demand_units
+    data_type: decimal(18,2)
+    description: Forecast demand.
+  - name: short_units
+    data_type: decimal(18,2)
+    description: Demand that could not be met.
+  - name: avg_inventory_value
+    data_type: decimal(18,2)
+    description: Average projected stock value, USD.
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - site_key
+        - part_key

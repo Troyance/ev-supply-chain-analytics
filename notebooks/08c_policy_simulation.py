@@ -18,7 +18,7 @@
 # MAGIC Every policy uses ADU (average daily usage, trailing 13 weeks) the way a planner would, and every order
 # MAGIC respects the MOQ and pack size.
 # MAGIC
-# MAGIC Costs:
+# MAGIC Writes `ev_bronze.sim_policy_daily`. dbt applies these costs in `mart_policy_comparison`:
 # MAGIC - holding: 25% a year of inventory value
 # MAGIC - ordering: $50 per JIT release, $150 per local order, $1,200 per overseas order (freight booking, customs, admin)
 # MAGIC - shortage: plants $400 per missing part per vehicle (fitted later in the rework yard), service DC $25 + unit
@@ -31,27 +31,33 @@ import numpy as np
 import pandas as pd
 from pyspark.sql import functions as F
 
-SCHEMA = "workspace.ev_supply_chain"
+BRONZE = "workspace.ev_bronze"
+SILVER = "workspace.ev_silver"
+GOLD = "workspace.ev_gold"
 SIM_START = "2025-11-17"          # 52 weeks ending with the last full week of history
 WARMUP_WEEKS = 13
 HOLDING_RATE = 0.25
 POLICIES = ["current", "lean", "high_service", "eoq", "ddmrp", "mrp"]
 
-planning = spark.table(f"{SCHEMA}.dim_part_planning")
-scorecard = spark.table(f"{SCHEMA}.gold_supplier_scorecard").select(
-    "supplier_id", (F.col("on_time_pct") / 100).alias("on_time_rate"),
-    F.coalesce("avg_days_late_when_late", F.lit(0.0)).alias("days_late_when_late"),
-    F.col("lead_time_stddev").alias("actual_lt_stddev"))
-qpv = spark.table(f"{SCHEMA}.dim_bom").groupBy("part_id").agg(F.avg("qty_per_vehicle").alias("qty_per_vehicle"))
+# reads the dbt models, writes a raw simulation output that dbt costs out (mart_policy_comparison)
+supplier = spark.table(f"{GOLD}.mart_supplier_scorecard").select(
+    "supplier_key", "supplier_id", F.col("region").alias("supplier_region"), F.col("tier").alias("supplier_tier"),
+    "on_time_rate", F.coalesce("avg_days_late_when_late", F.lit(0.0)).alias("days_late_when_late"),
+    F.col("lead_time_stddev_days").alias("actual_lt_stddev"))
+planning = (spark.table(f"{SILVER}.dim_part")
+            .join(spark.table(f"{SILVER}.bridge_part_supplier").filter("sourcing_role = 'primary'").select("part_key", "supplier_key"), "part_key")
+            .join(supplier, "supplier_key")
+            .select("part_id", "component_category", "supplier_id", "supplier_region", "supplier_tier",
+                    F.col("standard_cost").alias("unit_cost"), "buffer_class", "planning_lead_time_days",
+                    "lead_time_stddev_days", "review_period_days", "service_level_z", "pack_size", "moq",
+                    "on_time_rate", "days_late_when_late", "actual_lt_stddev"))
+qpv = spark.table(f"{SILVER}.bridge_vehicle_model_part").groupBy("part_id").agg(F.avg("qty_per_vehicle").alias("qty_per_vehicle"))
 
-demand = (spark.table(f"{SCHEMA}.fct_part_demand_weekly")
+demand = (spark.table(f"{SILVER}.fct_part_demand").select("week_start", "site_id", "part_id", "units")
           .filter(F.col("week_start") >= F.date_sub(F.lit(SIM_START).cast("date"), WARMUP_WEEKS * 7)))
 
 inputs = (demand
-          .join(planning.select("part_id", "component_category", "supplier_id", "supplier_region", "supplier_tier",
-                                "unit_cost", "buffer_class", "planning_lead_time_days", "lead_time_stddev_days",
-                                "review_period_days", "service_level_z", "pack_size", "moq"), "part_id")
-          .join(scorecard, "supplier_id", "left")
+          .join(planning, "part_id")
           .join(qpv, "part_id", "left"))
 
 # COMMAND ----------
@@ -174,52 +180,20 @@ def simulate(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out, columns=[c.split()[0] for c in OUT_SCHEMA.replace("\n", " ").split(",")])
 
 daily = inputs.groupBy("site_id", "part_id").applyInPandas(simulate, OUT_SCHEMA)
-daily.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{SCHEMA}.gold_policy_simulation_daily")
-daily = spark.table(f"{SCHEMA}.gold_policy_simulation_daily")
+daily.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{BRONZE}.sim_policy_daily")
+daily = spark.table(f"{BRONZE}.sim_policy_daily")
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## cost it out
-
-# COMMAND ----------
-
-attrs = (planning.select("part_id", "part_number", "part_name", "component_category", "buffer_class", "supplier_name",
-                         "supplier_region", "supplier_tier", "unit_cost", "moq")
-         .join(qpv, "part_id", "left"))
-
-overseas = F.col("supplier_region") != "America"
-order_cost = F.when(F.col("buffer_class") == "JIT", 50.0).when(overseas, 1200.0).otherwise(150.0)
-shortage_cost_per_unit = F.when(F.col("site_id") == "SDC1", 25 + F.col("unit_cost"))\
-                          .otherwise(400.0 / F.coalesce(F.col("qty_per_vehicle"), F.lit(1.0)))
-
-comparison = (daily.groupBy("site_id", "part_id", "policy")
-              .agg(F.sum("demand").alias("demand_units"), F.sum("unmet").alias("units_short"),
-                   F.sum((F.col("unmet") > 0).cast("int")).alias("stockout_days"),
-                   F.sum((F.col("order_qty") > 0).cast("int")).alias("orders_placed"),
-                   F.avg("on_hand").alias("avg_on_hand"), F.max("on_hand").alias("max_on_hand"))
-              .join(attrs, "part_id")
-              .withColumn("avg_inventory_value", F.col("avg_on_hand") * F.col("unit_cost"))
-              .withColumn("holding_cost", F.col("avg_inventory_value") * HOLDING_RATE)
-              .withColumn("ordering_cost", F.col("orders_placed") * order_cost)
-              .withColumn("shortage_cost", F.col("units_short") * shortage_cost_per_unit)
-              .withColumn("total_cost", F.col("holding_cost") + F.col("ordering_cost") + F.col("shortage_cost"))
-              .withColumn("fill_rate", 1 - F.col("units_short") / F.col("demand_units")))
-
-comparison.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{SCHEMA}.gold_policy_comparison")
-comparison = spark.table(f"{SCHEMA}.gold_policy_comparison")
-
-# COMMAND ----------
-
-rows = (comparison.groupBy("policy")
-        .agg(F.round(F.sum("holding_cost") / 1e6, 2).alias("holding_m"), F.round(F.sum("ordering_cost") / 1e6, 2).alias("ordering_m"),
-             F.round(F.sum("shortage_cost") / 1e6, 2).alias("shortage_m"), F.round(F.sum("total_cost") / 1e6, 2).alias("total_m"),
-             F.round(F.sum("avg_inventory_value") / 1e6, 1).alias("avg_inventory_m"),
-             F.round(1 - F.sum("units_short") / F.sum("demand_units"), 4).alias("fill_rate"),
-             F.sum("orders_placed").alias("orders"))
-        .orderBy("total_m").collect())
-result = {"parts_simulated": comparison.select("site_id", "part_id").distinct().count(),
-          "by_policy": {r.policy: {k: r[k] for k in ["holding_m", "ordering_m", "shortage_m", "total_m",
-                                                      "avg_inventory_m", "fill_rate", "orders"]} for r in rows}}
+# costs (holding, ordering, shortage) are worked out in dbt: mart_policy_comparison. this is just a quick check
+by_part = (daily.groupBy("policy", "site_id", "part_id")
+           .agg(F.sum("demand").alias("d"), F.sum("unmet").alias("u"), F.sum((F.col("unmet") > 0).cast("int")).alias("so")))
+rows = (by_part.groupBy("policy")
+        .agg(F.round(1 - F.sum("u") / F.sum("d"), 4).alias("unit_fill_rate"),
+             F.round(F.avg((F.col("so") > 0).cast("int")), 3).alias("share_of_parts_with_stockout"))
+        .orderBy("share_of_parts_with_stockout").collect())
+result = {"parts_simulated": by_part.select("site_id", "part_id").distinct().count(),
+          "by_policy": {r.policy: {"unit_fill_rate": r.unit_fill_rate, "share_of_parts_with_stockout": r.share_of_parts_with_stockout}
+                        for r in rows}}
 print(json.dumps(result, indent=2))
 dbutils.notebook.exit(json.dumps(result))

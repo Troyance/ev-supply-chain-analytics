@@ -16,7 +16,7 @@
 # MAGIC   service demand as a rate per 1k vehicles in the field
 # MAGIC - backtest on the last 26 origins vs a naive baseline, intervals from backtest errors
 # MAGIC - everything gets logged to MLflow, the models get registered in Unity Catalog, and forecasts are
-# MAGIC   appended to `fct_forecast` under a `run_id`
+# MAGIC   appended to `ev_bronze.ml_forecasts` under a `run_id` (dbt picks them up incrementally into `fct_forecast`)
 
 # COMMAND ----------
 
@@ -27,7 +27,8 @@ import lightgbm as lgb
 import mlflow
 from pyspark.sql import functions as F
 
-SCHEMA = "workspace.ev_supply_chain"
+BRONZE = "workspace.ev_bronze"      # bronze: source-system extracts, written by these notebooks
+MODELS = "workspace.ev_ml"         # registered models
 H = 13
 VAL_ORIGINS = 26
 
@@ -35,9 +36,9 @@ user = spark.sql("SELECT current_user()").first()[0]
 mlflow.set_registry_uri("databricks-uc")
 mlflow.set_experiment(f"/Users/{user}/ev-supply-chain-forecasts")
 
-builds = spark.table(f"{SCHEMA}.fct_vehicle_builds").toPandas()
-service = spark.table(f"{SCHEMA}.fct_service_demand").toPandas()
-part_cat = spark.table(f"{SCHEMA}.dim_part_planning").select("part_id", "component_category").toPandas()
+builds = spark.table(f"{BRONZE}.mes_vehicle_builds").toPandas()
+service = spark.table(f"{BRONZE}.service_demand").toPandas()
+part_cat = spark.table(f"{BRONZE}.erp_parts").select("part_id", "component_category").toPandas()
 for d in (builds, service):
     d["week_start"] = pd.to_datetime(d["week_start"])
 
@@ -188,7 +189,7 @@ def run_forecast(rows, features, params, kind, model_name, baseline_col):
         mlflow.log_dict(imp, "feature_importance.json")
         info = mlflow.lightgbm.log_model(
             final, "model",
-            registered_model_name=f"{SCHEMA}.{model_name}",
+            registered_model_name=f"{MODELS}.{model_name}",
             input_example=future[features].head(5),
         )
         version = getattr(info, "registered_model_version", None)
@@ -266,8 +267,8 @@ fc["model_id"] = fc["model_id"].astype(object).where(fc["model_id"].notna(), Non
 fc["part_id"] = fc["part_id"].astype(object).where(fc["part_id"].notna(), None)
 fc = fc.replace({np.nan: None})
 
-spark.createDataFrame(fc, FORECAST_SCHEMA).write.mode("append").saveAsTable(f"{SCHEMA}.fct_forecast")
-spark.createDataFrame(pd.DataFrame(runs), RUN_SCHEMA).write.mode("append").saveAsTable(f"{SCHEMA}.forecast_run")
+spark.createDataFrame(fc, FORECAST_SCHEMA).write.mode("append").saveAsTable(f"{BRONZE}.ml_forecasts")
+spark.createDataFrame(pd.DataFrame(runs), RUN_SCHEMA).write.mode("append").saveAsTable(f"{BRONZE}.ml_forecast_runs")
 
 # COMMAND ----------
 

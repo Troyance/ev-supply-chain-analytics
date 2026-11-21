@@ -1,6 +1,12 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # silver layer
+# MAGIC # tpch silver (spark practice)
+# MAGIC
+# MAGIC The first pyspark notebook in the project: cleans up the raw tpch tables into facts and dimensions. It's not
+# MAGIC part of the pipeline anymore (purchasing is generated from the build schedule now), but it's a good
+# MAGIC reference for joins, broadcast, lazy evaluation and writing delta tables. Reads `samples.tpch`, writes `ev_practice`.
+# MAGIC
+# MAGIC ## original notes
 # MAGIC
 # MAGIC Takes the bronze tables and turns them into clean facts and dimensions:
 # MAGIC
@@ -15,11 +21,12 @@
 
 from pyspark.sql import functions as F
 
-SCHEMA = "workspace.ev_supply_chain"
+SCHEMA = "workspace.ev_practice"   # scratch schema, not part of the pipeline
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
 YEAR_SHIFT_MONTHS = 28 * 12
 
 def bronze(name):
-    return spark.table(f"{SCHEMA}.bronze_{name}")
+    return spark.table(f"samples.tpch.{name}")
 
 def shift(col):
     return F.add_months(F.col(col), YEAR_SHIFT_MONTHS)

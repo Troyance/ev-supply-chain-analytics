@@ -4,7 +4,7 @@ profile: ev_supply_chain
 config-version: 2
 
 vars:
-  source_schema: ev_supply_chain   # where the spark notebooks land raw data. moves to ev_raw next
+  raw_schema: ev_bronze   # where the spark notebooks land source data
   shortage_start: "2021-06-01"
   shortage_peak: "2022-04-01"
   shortage_end: "2022-12-31"
@@ -18,20 +18,20 @@ models:
       relation: true
       columns: true
     staging:
-      +schema: ev_core
+      +schema: ev_staging
       +materialized: view
     core:
-      +schema: ev_core
+      +schema: ev_silver
       +materialized: table
       intermediate:
         +materialized: view
     marts:
-      +schema: ev_marts
+      +schema: ev_gold
       +materialized: table
 
 seeds:
   ev_supply_chain:
-    +schema: ev_core
+    +schema: ev_silver
 
 data_tests:
   +severity: error

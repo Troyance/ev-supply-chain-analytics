@@ -1,49 +1,60 @@
 version: 2
 
-# everything the spark notebooks land. in a real company these would be fivetran-synced erp / mes / wms tables.
+# everything the spark notebooks land in ev_bronze. in a real company these would be fivetran-synced
+# erp / mes / wms / service tables, plus outputs from the forecasting and simulation jobs.
 sources:
   - name: tpch
     description: TPC-H sample data, only used for the supplier master (names, countries, regions).
-    schema: "{{ var('source_schema') }}"
+    schema: "{{ var('raw_schema') }}"
     tables:
-      - name: bronze_supplier
-      - name: bronze_nation
-      - name: bronze_region
+      - name: tpch_supplier
+      - name: tpch_nation
+      - name: tpch_region
 
   - name: erp
-    description: Production planning, parts master, BOM, sourcing and purchasing (stand-in for an ERP extract).
-    schema: "{{ var('source_schema') }}"
+    description: Parts master, BOM, suppliers, sourcing, purchasing and MRP planning parameters.
+    schema: "{{ var('raw_schema') }}"
     tables:
-      - name: dim_site
-      - name: dim_vehicle_model
-      - name: dim_part_catalog
-      - name: dim_bom
-      - name: dim_active_supplier
-      - name: dim_sourcing
-      - name: fct_vehicle_builds
-      - name: fct_po_lines_scenario
-      - name: dim_part_planning
-        description: MRP planning parameters per part (buffer class, lead time, review period, pack size, moq).
+      - name: erp_sites
+      - name: erp_vehicle_models
+      - name: erp_parts
+      - name: erp_bom
+      - name: erp_suppliers
+        description: Supplier profiles. Also holds the generator's hidden truth (p_late, is_slipping) which staging drops.
+      - name: erp_sourcing
+      - name: erp_po_deliveries
+      - name: erp_part_planning_parameters
+
+  - name: mes
+    description: Manufacturing execution - what got built.
+    schema: "{{ var('raw_schema') }}"
+    tables:
+      - name: mes_vehicle_builds
 
   - name: service
-    schema: "{{ var('source_schema') }}"
+    schema: "{{ var('raw_schema') }}"
     tables:
-      - name: fct_service_demand
+      - name: service_demand
 
   - name: wms
-    schema: "{{ var('source_schema') }}"
+    schema: "{{ var('raw_schema') }}"
     tables:
-      - name: fct_inventory_snapshot
+      - name: wms_inventory_snapshot
 
   - name: ml
-    description: Outputs of the forecasting and simulation notebooks.
-    schema: "{{ var('source_schema') }}"
+    description: Forecasting job output. Append-only.
+    schema: "{{ var('raw_schema') }}"
     tables:
-      - name: forecast_run
+      - name: ml_forecast_runs
         config:
           loaded_at_field: created_at
           freshness:
             warn_after: {count: 8, period: day}
-      - name: fct_forecast
-      - name: gold_policy_simulation_daily
-      - name: gold_inventory_projection
+      - name: ml_forecasts
+
+  - name: sim
+    description: Simulation job output. Only exists after the simulation notebooks run, so everything built on it is tagged simulation.
+    schema: "{{ var('raw_schema') }}"
+    tables:
+      - name: sim_policy_daily
+      - name: sim_inventory_projection

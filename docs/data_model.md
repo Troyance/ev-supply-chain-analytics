@@ -1,15 +1,20 @@
 # data model
 
 Kimball-style: conformed dimensions shared by every fact, one clear grain per fact table, business-facing marts on
-top. dbt owns everything after the raw layer.
+top. dbt owns everything after bronze.
 
 ## layers
 
-| schema | what's in it | built by |
-|---|---|---|
-| `ev_raw` | source system extracts (erp, mes, wms) plus ml outputs | spark notebooks - in a real setup this is what fivetran lands |
-| `ev_core` | `stg_` (one per source table, renames and types only), `int_` (reusable logic), `dim_`, `fct_` | dbt |
-| `ev_marts` | `mart_` tables for dashboards and genie, plus metric views | dbt |
+Medallion layers, one schema each in the `workspace` catalog:
+
+| layer | schema | what's in it | built by |
+|---|---|---|---|
+| bronze | `ev_bronze` | source system extracts (erp, mes, wms, service) plus ml and simulation outputs | spark notebooks - in a real setup this is what fivetran lands |
+| staging | `ev_staging` | `stg_` views, one per source table - renames and types only, no business logic | dbt |
+| silver | `ev_silver` | `int_` (reusable business logic), `dim_`, `bridge_`, `fct_` - conformed and tested | dbt |
+| gold | `ev_gold` | `mart_` tables and metric views - what dashboards and genie read | dbt |
+
+Registered forecasting models live in `ev_ml`.
 
 ## bus matrix
 

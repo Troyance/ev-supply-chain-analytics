@@ -2,11 +2,12 @@
 # MAGIC %md
 # MAGIC # planning setup
 # MAGIC
-# MAGIC Planning parameters and demand history, on top of production (03) and the supplier scorecard (05):
+# MAGIC MRP planning parameters, service demand and an inventory snapshot. Reads only raw tables, so it never waits
+# MAGIC on dbt. Writes to `ev_bronze`:
 # MAGIC
-# MAGIC - `dim_part_planning` - main supplier, lead time and buffer class (JIT / kanban / standard / strategic) per part
-# MAGIC - `fct_service_demand` - weekly service parts demand at the DC, driven by how many vehicles are on the road
-# MAGIC - `fct_inventory_snapshot` - what's on hand and on order right now
+# MAGIC - `erp_part_planning_parameters` - buffer class, lead time, review period, pack size and moq per part
+# MAGIC - `service_demand` - weekly service parts demand at the DC, driven by how many vehicles are on the road
+# MAGIC - `wms_inventory_snapshot` - what's on hand and on order right now
 # MAGIC
 # MAGIC Plant part demand is *dependent* demand: builds × BOM. Only the service DC has true independent demand.
 
@@ -16,7 +17,7 @@ import numpy as np
 import pandas as pd
 from pyspark.sql import functions as F
 
-SCHEMA = "workspace.ev_supply_chain"
+BRONZE = "workspace.ev_bronze"      # bronze: source-system extracts, written by these notebooks
 SNAPSHOT_DATE = "2026-11-21"
 rng = np.random.default_rng(42)
 
@@ -25,8 +26,8 @@ weeks = pd.date_range("2020-01-06", "2026-11-09", freq="W-MON")
 
 def save(pdf_or_sdf, name):
     sdf = spark.createDataFrame(pdf_or_sdf) if isinstance(pdf_or_sdf, pd.DataFrame) else pdf_or_sdf
-    sdf.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{SCHEMA}.{name}")
-    return spark.table(f"{SCHEMA}.{name}")
+    sdf.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{BRONZE}.{name}")
+    return spark.table(f"{BRONZE}.{name}")
 
 def bucket(*cols, n, salt):
     """deterministic 'random' int in [0, n). the salt keeps different draws independent - without it, every bucket on part_id is correlated with the bom sample filter"""
@@ -39,17 +40,17 @@ def bucket(*cols, n, salt):
 
 # COMMAND ----------
 
-builds = spark.table(f"{SCHEMA}.fct_vehicle_builds")
-bom = spark.table(f"{SCHEMA}.dim_bom")
-catalog = spark.table(f"{SCHEMA}.dim_part_catalog")
+builds = spark.table(f"{BRONZE}.mes_vehicle_builds")
+bom = spark.table(f"{BRONZE}.erp_bom")
+catalog = spark.table(f"{BRONZE}.erp_parts")
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## part planning parameters
 # MAGIC
-# MAGIC Main supplier = the primary source from `dim_sourcing`. Lead time and its variability come from what
-# MAGIC that supplier actually delivered (the scorecard), not what they quoted. Buffer class drives the replenishment logic later:
+# MAGIC Main supplier = the primary source from `erp_sourcing`. Lead time and its variability come from what
+# MAGIC that supplier actually delivered (raw delivery history), not what they quoted - like an mrp parameter job would. Buffer class drives the replenishment logic later:
 # MAGIC
 # MAGIC | class | who | lead time used | service level |
 # MAGIC |---|---|---|---|
@@ -60,11 +61,14 @@ catalog = spark.table(f"{SCHEMA}.dim_part_catalog")
 
 # COMMAND ----------
 
-main_supplier = (spark.table(f"{SCHEMA}.dim_sourcing").filter("sourcing_role = 'primary'")
+main_supplier = (spark.table(f"{BRONZE}.erp_sourcing").filter("sourcing_role = 'primary'")
                  .select("part_id", "supplier_id", F.col("unit_price").alias("unit_cost")))
 
-scorecard = spark.table(f"{SCHEMA}.gold_supplier_scorecard").select(
-    "supplier_id", "supplier_name", "region", "avg_lead_time_days", "lead_time_stddev", "tier")
+# actual lead time stats per supplier, straight from raw deliveries
+scorecard = (spark.table(f"{BRONZE}.erp_po_deliveries")
+             .groupBy("supplier_id")
+             .agg(F.avg("lead_time_days").alias("avg_lead_time_days"), F.stddev("lead_time_days").alias("lead_time_stddev"))
+             .join(spark.table(f"{BRONZE}.erp_suppliers").select("supplier_id", "region"), "supplier_id"))
 
 cat, region = F.col("component_category"), F.col("region")
 buffer_class = (F.when((cat == "Fasteners & fittings") & (region == "America"), "KANBAN")  # kanban needs a short loop
@@ -97,12 +101,11 @@ part_planning = (
     .withColumn("pack_size",
                 F.when(F.col("unit_cost") < 1, 1000).when(F.col("unit_cost") < 20, 100)
                  .when(F.col("unit_cost") < 200, 10).otherwise(1))
-    .select("part_id", "part_number", "part_name", "component_category", "supplier_id", "supplier_name",
-            F.col("region").alias("supplier_region"), F.col("tier").alias("supplier_tier"),
+    .select("part_id", "component_category", "supplier_id", F.col("region").alias("supplier_region"),
             "unit_cost", "buffer_class", "planning_lead_time_days", "lead_time_stddev_days",
             "review_period_days", "service_level_z", "pack_size")
 )
-part_planning = save(part_planning, "dim_part_planning")
+part_planning = save(part_planning, "erp_part_planning_parameters")
 
 # COMMAND ----------
 
@@ -133,7 +136,7 @@ for part_id, cat_name in service_parts.itertuples(index=False):
         season = 1.3 if (cat_name == "Body & chassis" and w.month in (12, 1, 2)) else 1.0
         rows.append((w, "SDC1", int(part_id), int(rng.poisson(f / 1000 * rate * season))))
 
-service = save(pd.DataFrame(rows, columns=["week_start", "site_id", "part_id", "units"]), "fct_service_demand")
+service = save(pd.DataFrame(rows, columns=["week_start", "site_id", "part_id", "units"]), "service_demand")
 
 # COMMAND ----------
 
@@ -149,7 +152,8 @@ plant_usage = (builds.join(bom, "model_id")
                .groupBy("week_start", "site_id", "part_id")
                .agg(F.sum(F.col("units") * F.col("qty_per_vehicle")).alias("units")))
 
-part_demand = save(plant_usage.unionByName(service), "fct_part_demand_weekly")
+# only used here for run rates. the real demand fact is built in dbt (fct_part_demand)
+part_demand = plant_usage.unionByName(service)
 
 # COMMAND ----------
 
@@ -181,7 +185,7 @@ part_planning = save(
     .withColumn("moq", (F.ceil(moq_raw / F.col("pack_size")) * F.col("pack_size")).cast("bigint"))
     .withColumn("moq_days_of_supply", F.round(F.col("moq") / F.col("drr_all_sites"), 1))
     .drop("drr_all_sites"),
-    "dim_part_planning")
+    "erp_part_planning_parameters")
 
 # COMMAND ----------
 
@@ -215,13 +219,13 @@ inventory = save(
     .withColumn("on_order_qty", F.round(F.col("recent_drr") * F.col("on_order_days")).cast("bigint"))
     .select(F.lit(SNAPSHOT_DATE).cast("date").alias("snapshot_date"), "site_id", "part_id",
             "on_hand_qty", "on_order_qty"),
-    "fct_inventory_snapshot")
+    "wms_inventory_snapshot")
 
 # COMMAND ----------
 
 import json
-result = {t: spark.table(f"{SCHEMA}.{t}").count() for t in
-          ["dim_part_planning", "fct_service_demand", "fct_part_demand_weekly", "fct_inventory_snapshot"]}
+result = {t: spark.table(f"{BRONZE}.{t}").count() for t in
+          ["erp_part_planning_parameters", "service_demand", "wms_inventory_snapshot"]}
 result["buffer_classes"] = {r[0]: r[1] for r in part_planning.groupBy("buffer_class").count().collect()}
 result["moq_days_of_supply_median_by_class"] = {r[0]: r[1] for r in part_planning.groupBy("buffer_class")
     .agg(F.percentile_approx("moq_days_of_supply", 0.5)).collect()}

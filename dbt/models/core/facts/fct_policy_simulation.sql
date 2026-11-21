@@ -1,3 +1,4 @@
+{{ config(tags=["simulation"]) }}
 -- grain: policy x site x part x day
 select
     {{ dbt_utils.generate_surrogate_key(['policy_id']) }}      as policy_key,

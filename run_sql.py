@@ -1,6 +1,6 @@
 """runs each statement of a sql file through the sql statement api, keeping whitespace intact
 (the cli query tool strips leading spaces per line, which breaks the yaml in metric views)
-usage: python3 run_api.py sql/10_metric_views.sql"""
+usage: python3 run_sql.py sql/01_bronze.sql"""
 import json, re, subprocess, sys, time
 
 WAREHOUSE = "20729c7c3db8023a"

@@ -11,4 +11,4 @@ select
     forecast_p10,
     forecast_p50,
     forecast_p90
-from {{ source('ml', 'fct_forecast') }}
+from {{ source('ml', 'ml_forecasts') }}

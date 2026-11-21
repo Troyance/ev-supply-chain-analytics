@@ -4,11 +4,13 @@
 # MAGIC
 # MAGIC The build side of the world. Nothing here depends on suppliers, so it runs before purchasing.
 # MAGIC
-# MAGIC - `dim_site` - two plants and a service parts DC
-# MAGIC - `dim_vehicle_model` - three vehicle models
-# MAGIC - `fct_vehicle_builds` - weekly builds per plant/model (ramps, launches, shutdowns, a chip shortage)
-# MAGIC - `dim_part_catalog` - the ~1,900 parts we actually build with: part number, a real name, standard cost
-# MAGIC - `dim_bom` - which parts go into which vehicle, and how many
+# MAGIC Writes to `ev_bronze`, standing in for the erp and mes extracts:
+# MAGIC
+# MAGIC - `erp_sites` - two plants and a service parts DC
+# MAGIC - `erp_vehicle_models` - three vehicle models
+# MAGIC - `mes_vehicle_builds` - weekly builds per plant/model (ramps, launches, shutdowns, a chip shortage)
+# MAGIC - `erp_parts` - the ~1,900 parts we actually build with: part number, a real name, standard cost
+# MAGIC - `erp_bom` - which parts go into which vehicle, and how many
 # MAGIC
 # MAGIC Standard costs are calibrated so a vehicle's BOM comes to about $45k, split across categories roughly
 # MAGIC like a real EV (battery biggest, fasteners tiny).
@@ -19,14 +21,14 @@ import numpy as np
 import pandas as pd
 from pyspark.sql import functions as F
 
-SCHEMA = "workspace.ev_supply_chain"
+BRONZE = "workspace.ev_bronze"      # bronze: source-system extracts, written by these notebooks
 rng = np.random.default_rng(42)
 weeks = pd.date_range("2020-01-06", "2026-11-09", freq="W-MON")
 
 def save(pdf_or_sdf, name):
     sdf = spark.createDataFrame(pdf_or_sdf) if isinstance(pdf_or_sdf, pd.DataFrame) else pdf_or_sdf
-    sdf.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{SCHEMA}.{name}")
-    return spark.table(f"{SCHEMA}.{name}")
+    sdf.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{BRONZE}.{name}")
+    return spark.table(f"{BRONZE}.{name}")
 
 def bucket(*cols, n, salt):
     """deterministic 'random' int in [0, n). the salt keeps different draws independent"""
@@ -41,11 +43,11 @@ sites = save(pd.DataFrame(
     [("PLT1", "Plant 1 - Midwest", "plant"),
      ("PLT2", "Plant 2 - Southeast", "plant"),
      ("SDC1", "Service Parts DC", "service_dc")],
-    columns=["site_id", "site_name", "site_type"]), "dim_site")
+    columns=["site_id", "site_name", "site_type"]), "erp_sites")
 
 models = save(pd.DataFrame(
     [("PU", "Pickup"), ("SUV", "SUV"), ("VAN", "Delivery Van")],
-    columns=["model_id", "model_name"]), "dim_vehicle_model")
+    columns=["model_id", "model_name"]), "erp_vehicle_models")
 
 # COMMAND ----------
 
@@ -101,7 +103,7 @@ for site, model, launch, peak, ramp in lines:
         units = peak * s_curve * growth * seasonality(w) * rng.lognormal(0, 0.07)
         rows.append((w.date(), site, model, int(round(units))))
 
-builds = save(pd.DataFrame(rows, columns=["week_start", "site_id", "model_id", "units"]), "fct_vehicle_builds")
+builds = save(pd.DataFrame(rows, columns=["week_start", "site_id", "model_id", "units"]), "mes_vehicle_builds")
 
 # COMMAND ----------
 
@@ -158,8 +160,8 @@ PART_TYPES = {
         ("Hose clamp", 0.45, 1, 2, 12), ("Grommet", 0.25, 1, 2, 16), ("Cable tie mount", 0.08, 1, 4, 30)]),
 }
 
-part_ids = sorted(r.part_id for r in spark.table(f"{SCHEMA}.dim_part")
-                  .filter(bucket("part_id", n=500, salt="bom") == 0).select("part_id").collect())
+part_ids = sorted(r.part_id for r in spark.table(f"{BRONZE}.tpch_part").select(F.col("p_partkey").alias("part_id"))
+                  .filter(bucket("part_id", n=500, salt="bom") == 0).collect())
 prng = np.random.default_rng(7)
 cats = list(CATEGORY_MIX)
 rows = []
@@ -188,7 +190,7 @@ bom = save(
     parts.crossJoin(models.select("model_id"))
     .filter(bucket("part_id", "model_id", n=3, salt="bom_model") != 0)
     .select("model_id", "part_id", "qty_per_vehicle"),
-    "dim_bom")
+    "erp_bom")
 
 # COMMAND ----------
 
@@ -208,7 +210,7 @@ scale = VEHICLE_COST / raw_vehicle_cost
 catalog = save(
     parts.withColumn("standard_cost", F.round(F.col("raw_cost") * F.lit(scale), 4).cast("decimal(14,4)"))
     .select("part_id", "part_number", "part_name", "component_category", "standard_cost"),
-    "dim_part_catalog")
+    "erp_parts")
 
 # COMMAND ----------
 

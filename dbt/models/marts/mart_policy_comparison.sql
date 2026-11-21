@@ -1,3 +1,4 @@
+{{ config(tags=["simulation"]) }}
 -- one row per site x part x policy. what each ordering policy cost over the simulated year.
 -- holding 25%/yr of inventory value. ordering $50 per jit release, $150 local, $1,200 overseas.
 -- shortage: plants $400 per missing part per vehicle (rework), service dc $25 + unit cost per backorder.

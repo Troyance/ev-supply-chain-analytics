@@ -12,4 +12,4 @@ select
     promised_date,
     received_date,
     ship_mode
-from {{ source('erp', 'fct_po_lines_scenario') }}
+from {{ source('erp', 'erp_po_deliveries') }}

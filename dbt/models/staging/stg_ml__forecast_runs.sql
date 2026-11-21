@@ -12,4 +12,4 @@ select
     wape   as backtest_wape,
     bias   as backtest_bias,
     created_at
-from {{ source('ml', 'forecast_run') }}
+from {{ source('ml', 'ml_forecast_runs') }}

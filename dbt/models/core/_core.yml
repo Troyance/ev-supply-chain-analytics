@@ -1390,6 +1390,88 @@ models:
         combination_of_columns:
         - vehicle_model_key
         - part_key
+- name: fct_inventory_projection
+  description: 'Grain: site x part x day. Today''s stock played forward 13 weeks under the current policy.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: site_key
+    data_type: string
+    description: Site.
+    constraints:
+    - type: not_null
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_site')
+          field: site_key
+  - name: part_key
+    data_type: string
+    description: Part.
+    constraints:
+    - type: not_null
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_part')
+          field: part_key
+  - name: projection_date_key
+    data_type: int
+    description: Projected day.
+    constraints:
+    - type: not_null
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_date')
+          field: date_key
+  - name: site_id
+    data_type: string
+    description: Site id.
+  - name: part_id
+    data_type: bigint
+    description: Part id.
+  - name: projection_date
+    data_type: date
+    description: Projected day.
+  - name: day_index
+    data_type: int
+    description: Days from the snapshot, 0-90.
+  - name: demand_units
+    data_type: decimal(18,2)
+    description: Forecast demand.
+  - name: received_units
+    data_type: decimal(18,2)
+    description: Units arriving.
+  - name: ordered_units
+    data_type: decimal(18,2)
+    description: Units ordered that day.
+  - name: on_hand_units
+    data_type: decimal(18,2)
+    description: Stock at end of day.
+  - name: inventory_position_units
+    data_type: decimal(18,2)
+    description: On hand + on order.
+  - name: short_units
+    data_type: decimal(18,2)
+    description: Demand that could not be met.
+  - name: safety_stock_units
+    data_type: decimal(18,2)
+    description: Safety stock level.
+  - name: reorder_point_units
+    data_type: decimal(18,2)
+    description: Reorder point.
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - site_key
+        - part_key
+        - projection_date_key
 unit_tests:
 - name: tier_uses_only_prior_months
   description: A month's tier is judged on the 12 months before it, and suppliers need 20 deliveries of history to be rated.

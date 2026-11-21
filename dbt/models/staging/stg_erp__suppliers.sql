@@ -4,4 +4,4 @@ select
     cast(supplier_id as bigint)           as supplier_id,
     cast(quoted_lead_time_days as int)    as quoted_lead_time_days,
     cast(transit_days as int)             as transit_days
-from {{ source('erp', 'dim_active_supplier') }}
+from {{ source('erp', 'erp_suppliers') }}
