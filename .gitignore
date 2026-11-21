@@ -1,0 +1,16 @@
+# Credentials — never commit these
+.databrickscfg
+.env
+*.env
+*token*
+
+# Databricks CLI / bundle local state
+.databricks/
+
+# Python & editor clutter
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+.vscode/
+.idea/
