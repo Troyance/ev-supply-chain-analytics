@@ -1,0 +1,2080 @@
+{
+ "datasets": [
+  {
+   "name": "ds_suppliers",
+   "displayName": "Suppliers",
+   "queryLines": [
+    "SELECT supplier_id, supplier_name, country, region, tier, po_lines, spend,\n",
+    "       on_time_pct / 100 AS on_time_rate, on_time_pct_recent / 100 AS on_time_rate_recent,\n",
+    "       on_time_pct_prior / 100 AS on_time_rate_prior, avg_lead_time_days, lead_time_stddev,\n",
+    "       lateness_trend_days_per_month, is_declining,\n",
+    "       CASE WHEN is_declining THEN 'Declining' ELSE 'Stable' END AS trend_status,\n",
+    "       on_time_pct * po_lines / 100 AS on_time_lines\n",
+    "FROM gold_supplier_scorecard\n"
+   ],
+   "columns": [
+    {
+     "displayName": "Suppliers",
+     "description": "Number of suppliers",
+     "expression": "COUNT(`supplier_id`)"
+    },
+    {
+     "displayName": "Declining Suppliers",
+     "description": "Suppliers getting 1+ day later per month",
+     "expression": "SUM(CASE WHEN `is_declining` THEN 1 ELSE 0 END)"
+    },
+    {
+     "displayName": "Total Spend",
+     "description": "Net spend, USD",
+     "expression": "SUM(`spend`)"
+    },
+    {
+     "displayName": "On-Time Rate",
+     "description": "Share of PO lines received by the promised date",
+     "expression": "SUM(`on_time_lines`) / SUM(`po_lines`)"
+    }
+   ]
+  },
+  {
+   "name": "ds_declining",
+   "displayName": "Declining suppliers",
+   "queryLines": [
+    "SELECT supplier_name, country, region, tier, spend, on_time_pct_prior / 100 AS on_time_prior,\n",
+    "       on_time_pct_recent / 100 AS on_time_recent, lateness_trend_days_per_month\n",
+    "FROM gold_supplier_scorecard WHERE is_declining\n",
+    "ORDER BY lateness_trend_days_per_month DESC\n"
+   ]
+  },
+  {
+   "name": "ds_monthly",
+   "displayName": "Monthly performance",
+   "queryLines": [
+    "SELECT order_month, component_category, po_lines, spend,\n",
+    "       on_time_pct * po_lines / 100 AS on_time_lines, avg_lead_time_days * po_lines AS lead_days\n",
+    "FROM gold_monthly_performance\n"
+   ],
+   "columns": [
+    {
+     "displayName": "On-Time Rate",
+     "description": "Share of lines on time",
+     "expression": "SUM(`on_time_lines`) / SUM(`po_lines`)"
+    },
+    {
+     "displayName": "Avg Lead Time",
+     "description": "Order-to-receipt days, weighted by lines",
+     "expression": "SUM(`lead_days`) / SUM(`po_lines`)"
+    }
+   ]
+  },
+  {
+   "name": "ds_risk",
+   "displayName": "Single-source risk",
+   "queryLines": [
+    "SELECT part_id, part_name, component_category, top_supplier_name, top_supplier_country,\n",
+    "       top_supplier_tier, top_supplier_on_time_pct / 100 AS top_supplier_on_time, total_spend,\n",
+    "       top_supplier_share_pct / 100 AS top_supplier_share, is_high_risk,\n",
+    "       CASE WHEN is_high_risk THEN 'High risk (tier C supplier)' ELSE 'Concentrated' END AS risk_level\n",
+    "FROM gold_single_source_risk\n"
+   ],
+   "columns": [
+    {
+     "displayName": "Single-Sourced Parts",
+     "description": "Parts with one supplier at 80%+ of spend",
+     "expression": "COUNT(`part_id`)"
+    },
+    {
+     "displayName": "High-Risk Parts",
+     "description": "Single-sourced from a tier C supplier",
+     "expression": "SUM(CASE WHEN `is_high_risk` THEN 1 ELSE 0 END)"
+    },
+    {
+     "displayName": "Spend at Risk",
+     "description": "Spend on high-risk parts, USD",
+     "expression": "SUM(CASE WHEN `is_high_risk` THEN `total_spend` ELSE 0 END)"
+    }
+   ]
+  },
+  {
+   "name": "ds_risk_top",
+   "displayName": "Top high-risk parts",
+   "queryLines": [
+    "SELECT part_name, component_category, top_supplier_name, top_supplier_country,\n",
+    "       top_supplier_on_time_pct / 100 AS top_supplier_on_time, top_supplier_share_pct / 100 AS share, total_spend\n",
+    "FROM gold_single_source_risk WHERE is_high_risk ORDER BY total_spend DESC LIMIT 200\n"
+   ]
+  },
+  {
+   "name": "ds_geo",
+   "displayName": "Geography",
+   "queryLines": [
+    "SELECT region, country, suppliers, spend, spend_share_pct / 100 AS spend_share,\n",
+    "       avg_lead_time_days * spend AS lead_x_spend\n",
+    "FROM gold_spend_by_geography\n"
+   ],
+   "columns": [
+    {
+     "displayName": "Avg Lead Time",
+     "description": "Spend-weighted order-to-receipt days",
+     "expression": "SUM(`lead_x_spend`) / SUM(`spend`)"
+    }
+   ]
+  },
+  {
+   "name": "ds_builds",
+   "displayName": "Builds: actual + forecast",
+   "queryLines": [
+    "WITH latest AS (SELECT run_id FROM forecast_run WHERE run_type = 'production' AND forecast_type = 'vehicle_builds'\n",
+    "                ORDER BY created_at DESC LIMIT 1)\n",
+    "SELECT week_start AS week, site_id || ' ' || model_id AS line, units AS actual,\n",
+    "       CAST(NULL AS DOUBLE) AS forecast, CAST(NULL AS DOUBLE) AS forecast_low, CAST(NULL AS DOUBLE) AS forecast_high\n",
+    "FROM fct_vehicle_builds WHERE week_start >= '2024-01-01'\n",
+    "UNION ALL\n",
+    "SELECT target_week, site_id || ' ' || model_id, NULL, forecast_p50, forecast_p10, forecast_p90\n",
+    "FROM fct_forecast JOIN latest USING (run_id)\n"
+   ]
+  },
+  {
+   "name": "ds_accuracy",
+   "displayName": "Forecast accuracy",
+   "queryLines": [
+    "SELECT forecast_type, CASE WHEN model_name = 'naive_mean' THEN 'Naive baseline' ELSE 'LightGBM' END AS model,\n",
+    "       horizon_weeks, abs_error, actual_units\n",
+    "FROM gold_forecast_accuracy\n"
+   ],
+   "columns": [
+    {
+     "displayName": "WAPE",
+     "description": "Weighted absolute percent error",
+     "expression": "SUM(`abs_error`) / SUM(`actual_units`)"
+    }
+   ]
+  },
+  {
+   "name": "ds_signals",
+   "displayName": "Buy signals",
+   "queryLines": [
+    "SELECT site_id, part_id, part_name, component_category, buffer_class, supplier_name, supplier_region AS region,\n",
+    "       supplier_tier, daily_run_rate, planning_lead_time_days, safety_stock_days, days_of_cover,\n",
+    "       on_hand_qty, on_order_qty, reorder_point, signal, suggested_order_qty, suggested_order_value,\n",
+    "       projected_stockout_date, expected_receipt_date,\n",
+    "       CASE signal WHEN 'EXPEDITE' THEN 1 WHEN 'ORDER' THEN 2 WHEN 'EXCESS' THEN 3 ELSE 4 END AS signal_rank\n",
+    "FROM gold_buy_signals\n"
+   ],
+   "columns": [
+    {
+     "displayName": "Parts to Expedite",
+     "description": "On hand below safety stock",
+     "expression": "SUM(CASE WHEN `signal` = 'EXPEDITE' THEN 1 ELSE 0 END)"
+    },
+    {
+     "displayName": "Parts to Order",
+     "description": "Inventory position below reorder point",
+     "expression": "SUM(CASE WHEN `signal` = 'ORDER' THEN 1 ELSE 0 END)"
+    },
+    {
+     "displayName": "Suggested Order Value",
+     "description": "USD",
+     "expression": "SUM(`suggested_order_value`)"
+    }
+   ]
+  }
+ ],
+ "pages": [
+  {
+   "name": "suppliers",
+   "displayName": "Suppliers",
+   "pageType": "PAGE_TYPE_CANVAS",
+   "layoutVersion": "GRID_V1",
+   "layout": [
+    {
+     "widget": {
+      "name": "title-suppliers",
+      "multilineTextboxSpec": {
+       "lines": [
+        "# Supplier performance\nHow reliable the supplier base is, where it is slow, and who is getting worse. Asia ships slowest and holds most tier C suppliers. Electronics lead times spiked during the 2021-22 chip shortage."
+       ]
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-spend",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_suppliers",
+         "fields": [
+          {
+           "name": "measure(Total Spend)",
+           "expression": "MEASURE(`Total Spend`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Total Spend)",
+         "displayName": "Total spend",
+         "format": {
+          "type": "number-currency",
+          "currencyCode": "USD",
+          "abbreviation": "compact",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        }
+       },
+       "frame": {
+        "title": "Total spend",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 2,
+      "width": 3,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-ontime",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_suppliers",
+         "fields": [
+          {
+           "name": "measure(On-Time Rate)",
+           "expression": "MEASURE(`On-Time Rate`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(On-Time Rate)",
+         "displayName": "On-time delivery",
+         "format": {
+          "type": "number-percent",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        }
+       },
+       "frame": {
+        "title": "On-time delivery",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 3,
+      "y": 2,
+      "width": 3,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-suppliers",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_suppliers",
+         "fields": [
+          {
+           "name": "measure(Suppliers)",
+           "expression": "MEASURE(`Suppliers`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Suppliers)",
+         "displayName": "Suppliers",
+         "format": {
+          "type": "number-plain",
+          "abbreviation": "compact",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        }
+       },
+       "frame": {
+        "title": "Suppliers",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 6,
+      "y": 2,
+      "width": 3,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-declining",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_suppliers",
+         "fields": [
+          {
+           "name": "measure(Declining Suppliers)",
+           "expression": "MEASURE(`Declining Suppliers`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Declining Suppliers)",
+         "displayName": "Declining suppliers"
+        }
+       },
+       "frame": {
+        "title": "Declining suppliers",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 9,
+      "y": 2,
+      "width": 3,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "lead-time-trend",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_monthly",
+         "fields": [
+          {
+           "name": "monthly(order_month)",
+           "expression": "DATE_TRUNC(\"MONTH\", `order_month`)"
+          },
+          {
+           "name": "measure(Avg Lead Time)",
+           "expression": "MEASURE(`Avg Lead Time`)"
+          },
+          {
+           "name": "component_category",
+           "expression": "`component_category`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "line",
+       "encodings": {
+        "x": {
+         "fieldName": "monthly(order_month)",
+         "scale": {
+          "type": "temporal"
+         },
+         "displayName": "Order month"
+        },
+        "y": {
+         "fieldName": "measure(Avg Lead Time)",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Avg lead time (days)",
+         "format": {
+          "type": "number-plain",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        },
+        "color": {
+         "fieldName": "component_category",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Category"
+        }
+       },
+       "frame": {
+        "title": "Lead time by component category",
+        "showTitle": true
+       },
+       "annotations": [
+        {
+         "type": "vertical-line",
+         "encodings": {
+          "x": {
+           "dataValue": "2021-06-01T00:00:00.000",
+           "dataType": "DATETIME"
+          },
+          "label": {
+           "value": "Chip shortage starts"
+          },
+          "color": {
+           "value": "#E15759"
+          }
+         }
+        }
+       ]
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 5,
+      "width": 8,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "lead-by-region",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_geo",
+         "fields": [
+          {
+           "name": "region",
+           "expression": "`region`"
+          },
+          {
+           "name": "measure(Avg Lead Time)",
+           "expression": "MEASURE(`Avg Lead Time`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "region",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Region"
+        },
+        "y": {
+         "fieldName": "measure(Avg Lead Time)",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Avg lead time (days)",
+         "format": {
+          "type": "number-plain",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        }
+       },
+       "frame": {
+        "title": "Lead time by supplier region",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 8,
+      "y": 5,
+      "width": 4,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "ontime-trend",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_monthly",
+         "fields": [
+          {
+           "name": "monthly(order_month)",
+           "expression": "DATE_TRUNC(\"MONTH\", `order_month`)"
+          },
+          {
+           "name": "measure(On-Time Rate)",
+           "expression": "MEASURE(`On-Time Rate`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "line",
+       "encodings": {
+        "x": {
+         "fieldName": "monthly(order_month)",
+         "scale": {
+          "type": "temporal"
+         },
+         "displayName": "Order month"
+        },
+        "y": {
+         "fieldName": "measure(On-Time Rate)",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "On-time rate",
+         "format": {
+          "type": "number-percent",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        }
+       },
+       "frame": {
+        "title": "On-time delivery over time",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 11,
+      "width": 6,
+      "height": 5
+     }
+    },
+    {
+     "widget": {
+      "name": "tier-by-region",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_suppliers",
+         "fields": [
+          {
+           "name": "region",
+           "expression": "`region`"
+          },
+          {
+           "name": "measure(Suppliers)",
+           "expression": "MEASURE(`Suppliers`)"
+          },
+          {
+           "name": "tier",
+           "expression": "`tier`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "region",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Region"
+        },
+        "y": {
+         "fieldName": "measure(Suppliers)",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Suppliers"
+        },
+        "color": {
+         "fieldName": "tier",
+         "scale": {
+          "type": "categorical",
+          "mappings": [
+           {
+            "value": "A",
+            "color": "#59A14F"
+           },
+           {
+            "value": "B",
+            "color": "#F28E2C"
+           },
+           {
+            "value": "C",
+            "color": "#E15759"
+           }
+          ]
+         },
+         "displayName": "Tier"
+        }
+       },
+       "frame": {
+        "title": "Supplier tiers by region",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 6,
+      "y": 11,
+      "width": 6,
+      "height": 5
+     }
+    },
+    {
+     "widget": {
+      "name": "declining-table",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_declining",
+         "fields": [
+          {
+           "name": "supplier_name",
+           "expression": "`supplier_name`"
+          },
+          {
+           "name": "country",
+           "expression": "`country`"
+          },
+          {
+           "name": "tier",
+           "expression": "`tier`"
+          },
+          {
+           "name": "lateness_trend_days_per_month",
+           "expression": "`lateness_trend_days_per_month`"
+          },
+          {
+           "name": "on_time_prior",
+           "expression": "`on_time_prior`"
+          },
+          {
+           "name": "on_time_recent",
+           "expression": "`on_time_recent`"
+          },
+          {
+           "name": "spend",
+           "expression": "`spend`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "supplier_name",
+          "displayName": "Supplier"
+         },
+         {
+          "fieldName": "country",
+          "displayName": "Country"
+         },
+         {
+          "fieldName": "tier",
+          "displayName": "Tier"
+         },
+         {
+          "fieldName": "lateness_trend_days_per_month",
+          "displayName": "Days later / month",
+          "format": {
+           "type": "number-plain",
+           "decimalPlaces": {
+            "type": "max",
+            "places": 1
+           }
+          }
+         },
+         {
+          "fieldName": "on_time_prior",
+          "displayName": "On-time (prior 12m)",
+          "format": {
+           "type": "number-percent",
+           "decimalPlaces": {
+            "type": "max",
+            "places": 1
+           }
+          }
+         },
+         {
+          "fieldName": "on_time_recent",
+          "displayName": "On-time (last 12m)",
+          "format": {
+           "type": "number-percent",
+           "decimalPlaces": {
+            "type": "max",
+            "places": 1
+           }
+          }
+         },
+         {
+          "fieldName": "spend",
+          "displayName": "Spend",
+          "format": {
+           "type": "number-currency",
+           "currencyCode": "USD",
+           "abbreviation": "compact",
+           "decimalPlaces": {
+            "type": "max",
+            "places": 1
+           }
+          }
+         }
+        ]
+       },
+       "frame": {
+        "title": "Declining suppliers (getting 1+ day later every month)",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 16,
+      "width": 12,
+      "height": 7
+     }
+    }
+   ]
+  },
+  {
+   "name": "risk",
+   "displayName": "Sourcing risk",
+   "pageType": "PAGE_TYPE_CANVAS",
+   "layoutVersion": "GRID_V1",
+   "layout": [
+    {
+     "widget": {
+      "name": "title-risk",
+      "multilineTextboxSpec": {
+       "lines": [
+        "# Sourcing risk\nParts where one supplier gets 80%+ of the spend. High risk means that supplier is also tier C. Battery materials are almost entirely single-sourced."
+       ]
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-single",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_risk",
+         "fields": [
+          {
+           "name": "measure(Single-Sourced Parts)",
+           "expression": "MEASURE(`Single-Sourced Parts`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Single-Sourced Parts)",
+         "displayName": "Single-sourced parts",
+         "format": {
+          "type": "number-plain",
+          "abbreviation": "compact",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        }
+       },
+       "frame": {
+        "title": "Single-sourced parts",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 2,
+      "width": 4,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-highrisk",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_risk",
+         "fields": [
+          {
+           "name": "measure(High-Risk Parts)",
+           "expression": "MEASURE(`High-Risk Parts`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(High-Risk Parts)",
+         "displayName": "High-risk parts",
+         "format": {
+          "type": "number-plain",
+          "abbreviation": "compact",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        }
+       },
+       "frame": {
+        "title": "High-risk parts",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 4,
+      "y": 2,
+      "width": 4,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-spend-risk",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_risk",
+         "fields": [
+          {
+           "name": "measure(Spend at Risk)",
+           "expression": "MEASURE(`Spend at Risk`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Spend at Risk)",
+         "displayName": "Spend at risk",
+         "format": {
+          "type": "number-currency",
+          "currencyCode": "USD",
+          "abbreviation": "compact",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        }
+       },
+       "frame": {
+        "title": "Spend at risk",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 8,
+      "y": 2,
+      "width": 4,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "risk-by-category",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_risk",
+         "fields": [
+          {
+           "name": "component_category",
+           "expression": "`component_category`"
+          },
+          {
+           "name": "measure(Single-Sourced Parts)",
+           "expression": "MEASURE(`Single-Sourced Parts`)"
+          },
+          {
+           "name": "risk_level",
+           "expression": "`risk_level`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "component_category",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Category"
+        },
+        "y": {
+         "fieldName": "measure(Single-Sourced Parts)",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Parts"
+        },
+        "color": {
+         "fieldName": "risk_level",
+         "scale": {
+          "type": "categorical",
+          "mappings": [
+           {
+            "value": "High risk (tier C supplier)",
+            "color": "#E15759"
+           },
+           {
+            "value": "Concentrated",
+            "color": "#F28E2C"
+           }
+          ]
+         },
+         "displayName": "Risk"
+        }
+       },
+       "frame": {
+        "title": "Single-sourced parts by category",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 5,
+      "width": 6,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "spend-share-region",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_geo",
+         "fields": [
+          {
+           "name": "region",
+           "expression": "`region`"
+          },
+          {
+           "name": "sum(spend)",
+           "expression": "SUM(`spend`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "pie",
+       "encodings": {
+        "angle": {
+         "fieldName": "sum(spend)",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Spend"
+        },
+        "color": {
+         "fieldName": "region",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Region"
+        },
+        "label": {
+         "show": true
+        }
+       },
+       "frame": {
+        "title": "Spend by supplier region",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 6,
+      "y": 5,
+      "width": 6,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "risk-table",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_risk_top",
+         "fields": [
+          {
+           "name": "part_name",
+           "expression": "`part_name`"
+          },
+          {
+           "name": "component_category",
+           "expression": "`component_category`"
+          },
+          {
+           "name": "top_supplier_name",
+           "expression": "`top_supplier_name`"
+          },
+          {
+           "name": "top_supplier_country",
+           "expression": "`top_supplier_country`"
+          },
+          {
+           "name": "top_supplier_on_time",
+           "expression": "`top_supplier_on_time`"
+          },
+          {
+           "name": "share",
+           "expression": "`share`"
+          },
+          {
+           "name": "total_spend",
+           "expression": "`total_spend`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "part_name",
+          "displayName": "Part"
+         },
+         {
+          "fieldName": "component_category",
+          "displayName": "Category"
+         },
+         {
+          "fieldName": "top_supplier_name",
+          "displayName": "Supplier"
+         },
+         {
+          "fieldName": "top_supplier_country",
+          "displayName": "Country"
+         },
+         {
+          "fieldName": "top_supplier_on_time",
+          "displayName": "Supplier on-time",
+          "format": {
+           "type": "number-percent",
+           "decimalPlaces": {
+            "type": "max",
+            "places": 1
+           }
+          }
+         },
+         {
+          "fieldName": "share",
+          "displayName": "Supplier share",
+          "format": {
+           "type": "number-percent",
+           "decimalPlaces": {
+            "type": "max",
+            "places": 1
+           }
+          }
+         },
+         {
+          "fieldName": "total_spend",
+          "displayName": "Spend",
+          "format": {
+           "type": "number-currency",
+           "currencyCode": "USD",
+           "abbreviation": "compact",
+           "decimalPlaces": {
+            "type": "max",
+            "places": 1
+           }
+          }
+         }
+        ]
+       },
+       "frame": {
+        "title": "Biggest high-risk parts",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 11,
+      "width": 12,
+      "height": 7
+     }
+    }
+   ]
+  },
+  {
+   "name": "planning",
+   "displayName": "Forecast & buy signals",
+   "pageType": "PAGE_TYPE_CANVAS",
+   "layoutVersion": "GRID_V1",
+   "layout": [
+    {
+     "widget": {
+      "name": "title-planning",
+      "multilineTextboxSpec": {
+       "lines": [
+        "# Forecast & buy signals\nVehicle builds forecast 13 weeks out (LightGBM), exploded through the BOM into part demand, then compared with stock on hand to decide what to order. Plant 2 is still ramping up."
+       ]
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-expedite",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_signals",
+         "fields": [
+          {
+           "name": "measure(Parts to Expedite)",
+           "expression": "MEASURE(`Parts to Expedite`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Parts to Expedite)",
+         "displayName": "Parts to expedite"
+        }
+       },
+       "frame": {
+        "title": "Parts to expedite",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 2,
+      "width": 4,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-order",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_signals",
+         "fields": [
+          {
+           "name": "measure(Parts to Order)",
+           "expression": "MEASURE(`Parts to Order`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Parts to Order)",
+         "displayName": "Parts to order"
+        }
+       },
+       "frame": {
+        "title": "Parts to order",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 4,
+      "y": 2,
+      "width": 4,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-order-value",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_signals",
+         "fields": [
+          {
+           "name": "measure(Suggested Order Value)",
+           "expression": "MEASURE(`Suggested Order Value`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Suggested Order Value)",
+         "displayName": "Suggested order value",
+         "format": {
+          "type": "number-currency",
+          "currencyCode": "USD",
+          "abbreviation": "compact",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        }
+       },
+       "frame": {
+        "title": "Suggested order value",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 8,
+      "y": 2,
+      "width": 4,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "builds-forecast",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_builds",
+         "fields": [
+          {
+           "name": "weekly(week)",
+           "expression": "DATE_TRUNC(\"WEEK\", `week`)"
+          },
+          {
+           "name": "sum(actual)",
+           "expression": "SUM(`actual`)"
+          },
+          {
+           "name": "sum(forecast)",
+           "expression": "SUM(`forecast`)"
+          },
+          {
+           "name": "line",
+           "expression": "`line`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "line",
+       "encodings": {
+        "x": {
+         "fieldName": "weekly(week)",
+         "scale": {
+          "type": "temporal"
+         },
+         "displayName": "Week"
+        },
+        "y": {
+         "scale": {
+          "type": "quantitative"
+         },
+         "fields": [
+          {
+           "fieldName": "sum(actual)",
+           "displayName": "Actual"
+          },
+          {
+           "fieldName": "sum(forecast)",
+           "displayName": "Forecast"
+          }
+         ]
+        }
+       },
+       "frame": {
+        "title": "Weekly vehicle builds: actual and forecast",
+        "showTitle": true
+       },
+       "facet": {
+        "type": "wrap",
+        "fieldName": "line",
+        "scale": {
+         "type": "categorical"
+        },
+        "layout": {
+         "column": {
+          "type": "count",
+          "value": 2
+         }
+        }
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 5,
+      "width": 8,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "accuracy-by-horizon",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_accuracy",
+         "fields": [
+          {
+           "name": "horizon_weeks",
+           "expression": "`horizon_weeks`"
+          },
+          {
+           "name": "measure(WAPE)",
+           "expression": "MEASURE(`WAPE`)"
+          },
+          {
+           "name": "model",
+           "expression": "`model`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "line",
+       "encodings": {
+        "x": {
+         "fieldName": "horizon_weeks",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Weeks ahead"
+        },
+        "y": {
+         "fieldName": "measure(WAPE)",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "WAPE",
+         "format": {
+          "type": "number-percent",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        },
+        "color": {
+         "fieldName": "model",
+         "scale": {
+          "type": "categorical",
+          "mappings": [
+           {
+            "value": "LightGBM",
+            "color": "#59A14F"
+           },
+           {
+            "value": "Naive baseline",
+            "color": "#9AA5B1"
+           }
+          ]
+         },
+         "displayName": "Model"
+        }
+       },
+       "frame": {
+        "title": "Forecast error by horizon (backtest)",
+        "showTitle": true,
+        "showDescription": true,
+        "description": "Lower is better. Weighted absolute percent error vs actuals."
+       }
+      }
+     },
+     "position": {
+      "x": 8,
+      "y": 5,
+      "width": 4,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "signals-by-class",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_signals",
+         "fields": [
+          {
+           "name": "buffer_class",
+           "expression": "`buffer_class`"
+          },
+          {
+           "name": "count(part_id)",
+           "expression": "COUNT(`part_id`)"
+          },
+          {
+           "name": "signal",
+           "expression": "`signal`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "buffer_class",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Buffer class"
+        },
+        "y": {
+         "fieldName": "count(part_id)",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Parts"
+        },
+        "color": {
+         "fieldName": "signal",
+         "scale": {
+          "type": "categorical",
+          "mappings": [
+           {
+            "value": "EXPEDITE",
+            "color": "#E15759"
+           },
+           {
+            "value": "ORDER",
+            "color": "#F28E2C"
+           },
+           {
+            "value": "OK",
+            "color": "#59A14F"
+           },
+           {
+            "value": "EXCESS",
+            "color": "#9AA5B1"
+           }
+          ]
+         },
+         "displayName": "Signal"
+        }
+       },
+       "frame": {
+        "title": "Buy signals by buffer class",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 11,
+      "width": 12,
+      "height": 5
+     }
+    },
+    {
+     "widget": {
+      "name": "signals-table",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_signals",
+         "fields": [
+          {
+           "name": "signal",
+           "expression": "`signal`"
+          },
+          {
+           "name": "site_id",
+           "expression": "`site_id`"
+          },
+          {
+           "name": "part_name",
+           "expression": "`part_name`"
+          },
+          {
+           "name": "component_category",
+           "expression": "`component_category`"
+          },
+          {
+           "name": "buffer_class",
+           "expression": "`buffer_class`"
+          },
+          {
+           "name": "supplier_name",
+           "expression": "`supplier_name`"
+          },
+          {
+           "name": "daily_run_rate",
+           "expression": "`daily_run_rate`"
+          },
+          {
+           "name": "days_of_cover",
+           "expression": "`days_of_cover`"
+          },
+          {
+           "name": "planning_lead_time_days",
+           "expression": "`planning_lead_time_days`"
+          },
+          {
+           "name": "safety_stock_days",
+           "expression": "`safety_stock_days`"
+          },
+          {
+           "name": "suggested_order_qty",
+           "expression": "`suggested_order_qty`"
+          },
+          {
+           "name": "suggested_order_value",
+           "expression": "`suggested_order_value`"
+          },
+          {
+           "name": "projected_stockout_date",
+           "expression": "`projected_stockout_date`"
+          },
+          {
+           "name": "signal_rank",
+           "expression": "`signal_rank`"
+          }
+         ],
+         "disaggregated": true,
+         "orders": [
+          {
+           "direction": "ASC",
+           "expression": "`signal_rank`"
+          },
+          {
+           "direction": "DESC",
+           "expression": "`suggested_order_value`"
+          }
+         ]
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "signal",
+          "displayName": "Signal"
+         },
+         {
+          "fieldName": "site_id",
+          "displayName": "Site"
+         },
+         {
+          "fieldName": "part_name",
+          "displayName": "Part"
+         },
+         {
+          "fieldName": "component_category",
+          "displayName": "Category"
+         },
+         {
+          "fieldName": "buffer_class",
+          "displayName": "Buffer"
+         },
+         {
+          "fieldName": "supplier_name",
+          "displayName": "Supplier"
+         },
+         {
+          "fieldName": "daily_run_rate",
+          "displayName": "DRR",
+          "format": {
+           "type": "number-plain",
+           "decimalPlaces": {
+            "type": "max",
+            "places": 1
+           }
+          }
+         },
+         {
+          "fieldName": "days_of_cover",
+          "displayName": "Days of cover",
+          "format": {
+           "type": "number-plain",
+           "decimalPlaces": {
+            "type": "max",
+            "places": 1
+           }
+          }
+         },
+         {
+          "fieldName": "planning_lead_time_days",
+          "displayName": "Lead time (d)"
+         },
+         {
+          "fieldName": "safety_stock_days",
+          "displayName": "Safety stock (d)",
+          "format": {
+           "type": "number-plain",
+           "decimalPlaces": {
+            "type": "max",
+            "places": 1
+           }
+          }
+         },
+         {
+          "fieldName": "suggested_order_qty",
+          "displayName": "Order qty"
+         },
+         {
+          "fieldName": "suggested_order_value",
+          "displayName": "Order value",
+          "format": {
+           "type": "number-currency",
+           "currencyCode": "USD",
+           "abbreviation": "compact",
+           "decimalPlaces": {
+            "type": "max",
+            "places": 1
+           }
+          }
+         },
+         {
+          "fieldName": "projected_stockout_date",
+          "displayName": "Stockout date"
+         }
+        ]
+       },
+       "frame": {
+        "title": "Buy signals",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 16,
+      "width": 12,
+      "height": 8
+     }
+    }
+   ]
+  },
+  {
+   "name": "filters",
+   "displayName": "Filters",
+   "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+   "layoutVersion": "GRID_V1",
+   "layout": [
+    {
+     "widget": {
+      "name": "filter-region",
+      "queries": [
+       {
+        "name": "filter-region_ds_suppliers",
+        "query": {
+         "datasetName": "ds_suppliers",
+         "fields": [
+          {
+           "name": "region",
+           "expression": "`region`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "filter-region_ds_declining",
+        "query": {
+         "datasetName": "ds_declining",
+         "fields": [
+          {
+           "name": "region",
+           "expression": "`region`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "filter-region_ds_geo",
+        "query": {
+         "datasetName": "ds_geo",
+         "fields": [
+          {
+           "name": "region",
+           "expression": "`region`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "filter-region_ds_signals",
+        "query": {
+         "datasetName": "ds_signals",
+         "fields": [
+          {
+           "name": "region",
+           "expression": "`region`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "filter-multi-select",
+       "encodings": {
+        "fields": [
+         {
+          "fieldName": "region",
+          "displayName": "Supplier region",
+          "queryName": "filter-region_ds_suppliers"
+         },
+         {
+          "fieldName": "region",
+          "displayName": "Supplier region",
+          "queryName": "filter-region_ds_declining"
+         },
+         {
+          "fieldName": "region",
+          "displayName": "Supplier region",
+          "queryName": "filter-region_ds_geo"
+         },
+         {
+          "fieldName": "region",
+          "displayName": "Supplier region",
+          "queryName": "filter-region_ds_signals"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Supplier region"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 0,
+      "width": 4,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "filter-category",
+      "queries": [
+       {
+        "name": "filter-category_ds_monthly",
+        "query": {
+         "datasetName": "ds_monthly",
+         "fields": [
+          {
+           "name": "component_category",
+           "expression": "`component_category`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "filter-category_ds_risk",
+        "query": {
+         "datasetName": "ds_risk",
+         "fields": [
+          {
+           "name": "component_category",
+           "expression": "`component_category`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "filter-category_ds_risk_top",
+        "query": {
+         "datasetName": "ds_risk_top",
+         "fields": [
+          {
+           "name": "component_category",
+           "expression": "`component_category`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "filter-category_ds_signals",
+        "query": {
+         "datasetName": "ds_signals",
+         "fields": [
+          {
+           "name": "component_category",
+           "expression": "`component_category`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "filter-multi-select",
+       "encodings": {
+        "fields": [
+         {
+          "fieldName": "component_category",
+          "displayName": "Component category",
+          "queryName": "filter-category_ds_monthly"
+         },
+         {
+          "fieldName": "component_category",
+          "displayName": "Component category",
+          "queryName": "filter-category_ds_risk"
+         },
+         {
+          "fieldName": "component_category",
+          "displayName": "Component category",
+          "queryName": "filter-category_ds_risk_top"
+         },
+         {
+          "fieldName": "component_category",
+          "displayName": "Component category",
+          "queryName": "filter-category_ds_signals"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Component category"
+       }
+      }
+     },
+     "position": {
+      "x": 4,
+      "y": 0,
+      "width": 4,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "filter-month",
+      "queries": [
+       {
+        "name": "filter-month_ds_monthly",
+        "query": {
+         "datasetName": "ds_monthly",
+         "fields": [
+          {
+           "name": "order_month",
+           "expression": "`order_month`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "filter-date-range-picker",
+       "encodings": {
+        "fields": [
+         {
+          "fieldName": "order_month",
+          "displayName": "Order month",
+          "queryName": "filter-month_ds_monthly"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Order month"
+       }
+      }
+     },
+     "position": {
+      "x": 8,
+      "y": 0,
+      "width": 4,
+      "height": 2
+     }
+    }
+   ]
+  }
+ ],
+ "uiSettings": {
+  "theme": {
+   "canvasBackgroundColor": {
+    "light": "#F7F8FA",
+    "dark": "#1B2128"
+   },
+   "widgetBackgroundColor": {
+    "light": "#FFFFFF",
+    "dark": "#11171C"
+   },
+   "widgetBorderColor": {
+    "light": "#FFFFFF",
+    "dark": "#11171C"
+   },
+   "fontColor": {
+    "light": "#11171C",
+    "dark": "#E8ECF0"
+   },
+   "selectionColor": {
+    "light": "#2272B4",
+    "dark": "#8ACAFF"
+   },
+   "visualizationColors": [
+    "#4E79A7",
+    "#F28E2C",
+    "#76B7B2",
+    "#B07AA1",
+    "#EDC948",
+    "#9C755F",
+    "#59A14F"
+   ],
+   "widgetHeaderAlignment": "LEFT"
+  }
+ }
+}
