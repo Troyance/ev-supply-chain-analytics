@@ -83,8 +83,10 @@ Ratios are always sum / sum, never averaged. The dashboard and the genie agent b
 - **forecast** - lightgbm (m5 style: one global model, direct multi-horizon, tweedie for lumpy service parts) gets
   build forecasts to 7.5% wape vs 18.3% for the naive baseline
 - **ordering policies** - six policies replayed on a year of real demand. at a steady plant, carrying more safety
-  stock pays for itself many times over. at the ramping plant every buffer-based policy fails, and only planning off
-  the build schedule (mrp) keeps up
+  stock pays for itself (high service costs $125M a year against $305M for the current rules). at the ramping
+  plant every policy gets the same launch pre-build, but buffers sized from trailing usage fall further behind as
+  volume climbs - shortages grow from 1% of demand to 34% by month nine. only planning off the build schedule (mrp)
+  keeps up, at 99.8% fill
 
 ## Running it
 

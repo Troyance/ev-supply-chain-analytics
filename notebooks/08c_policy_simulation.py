@@ -16,7 +16,8 @@
 # MAGIC | mrp | same rules as current, but sized from the *scheduled* usage over the next lead time + review period. plant demand comes from a firm build schedule, so planners know it ahead. the service DC has no schedule, so it falls back to the trailing average |
 # MAGIC
 # MAGIC Every policy uses ADU (average daily usage, trailing 13 weeks) the way a planner would, and every order
-# MAGIC respects the MOQ and pack size.
+# MAGIC respects the MOQ and pack size. Lines that launch inside the window (plant 2) get a launch plan: for the first
+# MAGIC 4 weeks every policy sizes from the planned launch rate, so stock is pre-built before the first vehicle.
 # MAGIC
 # MAGIC Writes `ev_bronze.sim_policy_daily`. dbt applies these costs in `mart_policy_comparison`:
 # MAGIC - holding: 25% a year of inventory value
@@ -104,6 +105,16 @@ def simulate(df: pd.DataFrame) -> pd.DataFrame:
     wk_sd = weekly.rolling(13, min_periods=4).std().shift(1)
     sd_daily = (wk_sd.reindex(days - pd.to_timedelta(days.weekday, unit="D")).ffill().fillna(0).to_numpy()) / np.sqrt(7)
     demand = daily[start:]
+
+    # launch plan: a line that starts inside the window gets pre-built stock. for its first 4 weeks every policy sizes
+    # from the planned launch rate instead of a trailing average of zero, so they order ahead of launch like a real
+    # pre-build. after that they go back to trailing averages, so what's left is the effect of the ramp itself.
+    nonzero = np.flatnonzero(daily > 0)
+    launch = int(nonzero[0]) if len(nonzero) else len(daily)
+    launch_adu = float(daily[launch:launch + 28].mean()) if launch < len(daily) else 0.0
+    launch_window_end = launch + 28 - start          # in simulation days
+    if launch > start - 91:                          # only lines launching inside (or just before) the window
+        adu = np.array([max(a, launch_adu) if d < launch_window_end else a for d, a in enumerate(adu)])
 
     # mrp: average scheduled usage over the coming lead time + review period (the build schedule is known)
     horizon = lt + max(review, 1)
