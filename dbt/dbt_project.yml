@@ -20,14 +20,24 @@ models:
     staging:
       +schema: ev_staging
       +materialized: view
+      +databricks_tags: {layer: staging, domain: supply_chain}
     core:
       +schema: ev_silver
       +materialized: table
+      +databricks_tags: {layer: silver, domain: supply_chain, certified: "true"}
       intermediate:
         +materialized: view
+        +databricks_tags: {layer: silver, domain: supply_chain, model_type: intermediate}
+      dims:
+        +databricks_tags: {layer: silver, domain: supply_chain, certified: "true", model_type: dimension}
+      facts:
+        +databricks_tags: {layer: silver, domain: supply_chain, certified: "true", model_type: fact}
     marts:
       +schema: ev_gold
       +materialized: table
+      +databricks_tags: {layer: gold, domain: supply_chain, certified: "true", model_type: mart}
+      metrics:
+        +databricks_tags: {layer: gold, domain: supply_chain, certified: "true", model_type: metric_view}
 
 seeds:
   ev_supply_chain:
