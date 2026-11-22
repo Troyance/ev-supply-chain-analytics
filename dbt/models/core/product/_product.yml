@@ -1,0 +1,547 @@
+version: 2
+models:
+- name: dim_program
+  description: 'One row per vehicle program: a model launching at a plant.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: program_key
+    data_type: string
+    description: Vehicle program.
+    constraints:
+    - type: not_null
+    - type: primary_key
+      name: pk_dim_program
+      warn_unenforced: false
+    data_tests:
+    - not_null
+    - unique
+  - name: vehicle_model_key
+    data_type: string
+    description: Vehicle model.
+    constraints:
+    - type: not_null
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_vehicle_model')
+          field: vehicle_model_key
+  - name: site_key
+    data_type: string
+    description: Plant.
+    constraints:
+    - type: not_null
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_site')
+          field: site_key
+  - name: program_id
+    data_type: string
+    description: Program id, e.g. PRG-SUV2.
+  - name: program_name
+    data_type: string
+    description: Program name.
+  - name: vehicle_model_id
+    data_type: string
+    description: PU, SUV or VAN.
+  - name: site_id
+    data_type: string
+    description: Plant the program launches at.
+  - name: ep_start_date
+    data_type: date
+    description: Start of the first engineering prototype build.
+  - name: sop_date
+    data_type: date
+    description: Start of production.
+- name: dim_prototype_build
+  description: One row per prototype build.
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: build_key
+    data_type: string
+    description: Prototype build.
+    constraints:
+    - type: not_null
+    - type: primary_key
+      name: pk_dim_prototype_build
+      warn_unenforced: false
+    data_tests:
+    - not_null
+    - unique
+  - name: program_key
+    data_type: string
+    description: Vehicle program.
+    constraints:
+    - type: not_null
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_program')
+          field: program_key
+  - name: build_id
+    data_type: string
+    description: Build id, e.g. PRG-SUV2-VP1.
+  - name: program_id
+    data_type: string
+    description: Program id, e.g. PRG-SUV2.
+  - name: build_phase
+    data_type: string
+    description: EP (engineering prototype), VP (validation prototype) or PPV (pre-production).
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - EP
+          - VP
+          - PPV
+  - name: phase_order
+    data_type: int
+    description: 1 EP, 2 VP, 3 PPV - for sorting.
+  - name: build_number
+    data_type: int
+    description: Build number within the phase.
+  - name: planned_start_date
+    data_type: date
+    description: Planned build start.
+  - name: actual_start_date
+    data_type: date
+    description: Actual build start.
+  - name: slip_days
+    data_type: int
+    description: Actual minus planned start, days.
+  - name: vehicles_built
+    data_type: int
+    description: Prototype vehicles built.
+- name: dim_item
+  description: 'PLM item master: vehicles, systems, assemblies, current and superseded parts.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: item_key
+    data_type: string
+    description: Item.
+    constraints:
+    - type: not_null
+    - type: primary_key
+      name: pk_dim_item
+      warn_unenforced: false
+    data_tests:
+    - not_null
+    - unique
+  - name: part_key
+    data_type: string
+    description: Matches dim_part for released parts, null otherwise.
+  - name: item_id
+    data_type: bigint
+    description: PLM item id.
+    data_tests:
+    - unique
+    - not_null
+  - name: item_number
+    data_type: string
+    description: Item number.
+  - name: item_name
+    data_type: string
+    description: Item description.
+  - name: item_type
+    data_type: string
+    description: vehicle, system, assembly or part.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - vehicle
+          - system
+          - assembly
+          - part
+  - name: bom_level
+    data_type: int
+    description: 0 vehicle, 1 system, 2 assembly, 3 part.
+  - name: component_category
+    data_type: string
+    description: Component category.
+  - name: lifecycle_status
+    data_type: string
+    description: Released, or Obsolete for parts superseded by an engineering change.
+- name: bridge_bom_structure
+  description: 'Multi-level BOM, one row per parent > child line version. Effective-dated: the BOM on any date is the lines valid that day.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: bom_line_key
+    data_type: string
+    description: BOM line version.
+    constraints:
+    - type: not_null
+    - type: primary_key
+      name: pk_bridge_bom_structure
+      warn_unenforced: false
+    data_tests:
+    - not_null
+    - unique
+  - name: parent_item_key
+    data_type: string
+    description: Parent item.
+    constraints:
+    - type: not_null
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_item')
+          field: item_key
+  - name: child_item_key
+    data_type: string
+    description: Child item.
+    constraints:
+    - type: not_null
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_item')
+          field: item_key
+  - name: eco_key
+    data_type: string
+    description: Engineering change.
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('fct_engineering_change')
+          field: eco_key
+  - name: parent_item_id
+    data_type: bigint
+    description: Parent item id.
+  - name: child_item_id
+    data_type: bigint
+    description: Child item id.
+  - name: qty
+    data_type: int
+    description: Quantity of the child in one parent.
+  - name: valid_from
+    data_type: date
+    description: First day this line version applies.
+  - name: valid_to
+    data_type: date
+    description: Last day it applies, 9999-12-31 if current.
+  - name: is_current
+    data_type: boolean
+    description: True for today's BOM.
+  data_tests:
+  - dbt_utils.expression_is_true:
+      arguments:
+        expression: valid_from <= valid_to
+- name: bridge_eco_item
+  description: Parts each engineering change touches.
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: eco_key
+    data_type: string
+    description: Engineering change.
+    constraints:
+    - type: not_null
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('fct_engineering_change')
+          field: eco_key
+  - name: part_key
+    data_type: string
+    description: Matches dim_part for released parts, null otherwise.
+    constraints:
+    - type: not_null
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_part')
+          field: part_key
+  - name: vehicle_model_key
+    data_type: string
+    description: Vehicle model.
+    constraints:
+    - type: not_null
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_vehicle_model')
+          field: vehicle_model_key
+  - name: eco_id
+    data_type: string
+    description: Engineering change id.
+  - name: part_id
+    data_type: bigint
+    description: Part id.
+  - name: vehicle_model_id
+    data_type: string
+    description: PU, SUV or VAN.
+  - name: change_type
+    data_type: string
+    description: Replace part, Quantity change, Add part or Remove part.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - Replace part
+          - Quantity change
+          - Add part
+          - Remove part
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - eco_key
+        - part_key
+        - vehicle_model_key
+- name: fct_engineering_change
+  description: 'Accumulating snapshot: one row per engineering change (ECO), a date per milestone, durations between them.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: eco_key
+    data_type: string
+    description: Engineering change.
+    constraints:
+    - type: not_null
+    - type: primary_key
+      name: pk_fct_engineering_change
+      warn_unenforced: false
+    data_tests:
+    - not_null
+    - unique
+  - name: program_key
+    data_type: string
+    description: Vehicle program.
+    constraints:
+    - type: not_null
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_program')
+          field: program_key
+  - name: originating_issue_key
+    data_type: string
+    description: Issue that raised the change, if any.
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('fct_issue')
+          field: issue_key
+  - name: created_date_key
+    data_type: int
+    description: Created.
+    constraints:
+    - type: not_null
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_date')
+          field: date_key
+  - name: implemented_date_key
+    data_type: int
+    description: Implemented.
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_date')
+          field: date_key
+  - name: eco_id
+    data_type: string
+    description: Engineering change id.
+  - name: program_id
+    data_type: string
+    description: Program id, e.g. PRG-SUV2.
+  - name: reason
+    data_type: string
+    description: Quality issue, Cost reduction, Supplier change, Design improvement or Regulatory.
+  - name: priority
+    data_type: string
+    description: High, Medium or Low.
+  - name: component_category
+    data_type: string
+    description: Component category.
+  - name: status
+    data_type: string
+    description: Draft, In review, Approved, Implemented or Rejected.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - Draft
+          - In review
+          - Approved
+          - Implemented
+          - Rejected
+  - name: raised_in_phase
+    data_type: string
+    description: EP, VP, PPV or Production - when the change was raised.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - EP
+          - VP
+          - PPV
+          - Production
+  - name: created_date
+    data_type: date
+    description: Created.
+  - name: submitted_date
+    data_type: date
+    description: Submitted for review.
+  - name: reviewed_date
+    data_type: date
+    description: Review done.
+  - name: approved_date
+    data_type: date
+    description: Approved.
+  - name: implemented_date
+    data_type: date
+    description: In the BOM.
+  - name: days_in_draft
+    data_type: int
+    description: Created to submitted, days.
+  - name: days_in_review
+    data_type: int
+    description: Submitted to reviewed, days.
+  - name: days_to_approve
+    data_type: int
+    description: Reviewed to approved, days.
+  - name: days_to_implement
+    data_type: int
+    description: Approved to implemented, days. Mostly tooling.
+  - name: cycle_time_days
+    data_type: int
+    description: Created to implemented, days.
+  - name: is_open
+    data_type: boolean
+    description: Not yet implemented or rejected.
+  - name: age_days
+    data_type: int
+    description: Days since created.
+  data_tests:
+  - dbt_utils.expression_is_true:
+      arguments:
+        expression: implemented_date is null or implemented_date >= approved_date
+  - dbt_utils.expression_is_true:
+      arguments:
+        expression: approved_date is null or approved_date >= reviewed_date
+- name: fct_issue
+  description: One row per issue found in a prototype build or in production.
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: issue_key
+    data_type: string
+    description: Issue.
+    constraints:
+    - type: not_null
+    - type: primary_key
+      name: pk_fct_issue
+      warn_unenforced: false
+    data_tests:
+    - not_null
+    - unique
+  - name: program_key
+    data_type: string
+    description: Vehicle program.
+    constraints:
+    - type: not_null
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_program')
+          field: program_key
+  - name: build_key
+    data_type: string
+    description: Prototype build.
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_prototype_build')
+          field: build_key
+  - name: part_key
+    data_type: string
+    description: Matches dim_part for released parts, null otherwise.
+    constraints:
+    - type: not_null
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_part')
+          field: part_key
+  - name: eco_key
+    data_type: string
+    description: Engineering change.
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('fct_engineering_change')
+          field: eco_key
+  - name: found_date_key
+    data_type: int
+    description: Found.
+    constraints:
+    - type: not_null
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_date')
+          field: date_key
+  - name: issue_id
+    data_type: string
+    description: Issue id.
+  - name: program_id
+    data_type: string
+    description: Program id, e.g. PRG-SUV2.
+  - name: build_id
+    data_type: string
+    description: Build id, e.g. PRG-SUV2-VP1.
+  - name: found_phase
+    data_type: string
+    description: EP, VP, PPV or Production.
+  - name: part_id
+    data_type: bigint
+    description: Part id.
+  - name: component_category
+    data_type: string
+    description: Component category.
+  - name: severity
+    data_type: string
+    description: S1 stop-ship, S2 major, S3 minor, S4 cosmetic.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - S1
+          - S2
+          - S3
+          - S4
+  - name: root_cause
+    data_type: string
+    description: Design, Supplier quality, Assembly process, Software, or Test or measurement.
+  - name: found_date
+    data_type: date
+    description: Found.
+  - name: closed_date
+    data_type: date
+    description: Closed, null if open.
+  - name: days_to_close
+    data_type: int
+    description: Found to closed, days.
+  - name: is_open
+    data_type: boolean
+    description: Not yet implemented or rejected.
+  - name: raised_eco
+    data_type: boolean
+    description: An engineering change was raised from it.

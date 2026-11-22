@@ -32,6 +32,8 @@ models:
         +databricks_tags: {layer: silver, domain: supply_chain, certified: "true", model_type: dimension}
       facts:
         +databricks_tags: {layer: silver, domain: supply_chain, certified: "true", model_type: fact}
+      product:
+        +databricks_tags: {layer: silver, domain: product_development, certified: "true"}
     marts:
       +schema: ev_gold
       +materialized: table

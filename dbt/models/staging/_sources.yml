@@ -31,6 +31,18 @@ sources:
     tables:
       - name: mes_vehicle_builds
 
+  - name: plm
+    description: Product lifecycle management - programs, prototype builds, item master, multi-level BOM, issues and engineering changes.
+    schema: "{{ var('raw_schema') }}"
+    tables:
+      - name: plm_programs
+      - name: plm_prototype_builds
+      - name: plm_items
+      - name: plm_bom_lines
+      - name: plm_issues
+      - name: plm_engineering_changes
+      - name: plm_eco_affected_items
+
   - name: service
     schema: "{{ var('raw_schema') }}"
     tables:
