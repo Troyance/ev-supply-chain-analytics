@@ -1,4 +1,4 @@
--- one row per supplier. reliability, spend, and whether they're getting worse.
+-- one row per supplier. delivery reliability, quality, spend, and whether they're getting worse.
 -- "recent" is the last 12 months of orders, "prior" the 12 before. the declining flag uses the slope of days late
 -- over all 24 months, which is far less noisy than comparing two yearly percentages.
 with deliveries as (
@@ -38,6 +38,22 @@ stats as (
     from lines
     group by supplier_key
 )
+,
+
+quality as (
+    select
+        supplier_key,
+        count(*)                                                        as quality_issues,
+        sum(case when severity in ('S1', 'S2') then 1 else 0 end)       as severe_quality_issues
+    from {{ ref('int_supplier_quality_issues') }}
+    group by supplier_key
+),
+
+units as (
+    select supplier_key, sum(quantity) as units_delivered
+    from {{ ref('fct_po_deliveries') }}
+    group by supplier_key
+)
 
 select
     s.supplier_key,
@@ -57,6 +73,12 @@ select
     cast(s.p90_lead_time_days as double)                                    as p90_lead_time_days,
     cast(s.avg_days_late_when_late as double)                               as avg_days_late_when_late,
     cast(s.lateness_trend as double)                                        as lateness_trend_days_per_month,
-    coalesce(s.lateness_trend >= 0.15, false)                               as is_declining
+    coalesce(s.lateness_trend >= 0.15, false)                               as is_declining,
+    coalesce(q.quality_issues, 0)                                           as quality_issues,
+    coalesce(q.severe_quality_issues, 0)                                    as severe_quality_issues,
+    -- defects per million units delivered: the standard automotive supplier quality kpi
+    cast(coalesce(q.quality_issues, 0) * 1e6 / u.units_delivered as double) as quality_ppm
 from stats s
 join {{ ref('dim_supplier') }} d using (supplier_key)
+left join quality q using (supplier_key)
+left join units u using (supplier_key)

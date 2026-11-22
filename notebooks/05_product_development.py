@@ -12,6 +12,8 @@
 # MAGIC - `plm_engineering_changes` + `plm_eco_affected_items` - ECOs and the parts each one changes
 # MAGIC
 # MAGIC The story ties together: builds find issues, serious issues raise ECOs, implemented ECOs change BOM lines.
+# MAGIC Supplier-quality issues lean toward suppliers that are also unreliable on delivery (same root cause: weak
+# MAGIC process control), so the scorecard can find that relationship from the data.
 # MAGIC The current BOM explodes to exactly the flat BOM in `erp_bom`, so purchasing and engineering agree.
 # MAGIC History is generated backwards from today's BOM: an ECO that replaced a part means an older line pointed
 # MAGIC at a now-obsolete part until the ECO's implementation date.
@@ -30,6 +32,11 @@ def save(pdf, name):
     spark.createDataFrame(pdf).write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{BRONZE}.{name}")
 
 parts = spark.table(f"{BRONZE}.erp_parts").toPandas().sort_values("part_id").reset_index(drop=True)
+# how reliable each part's main supplier really is (the generator's hidden truth from 04_purchasing). suppliers with
+# weak process control are late more often AND ship more bad parts, so supplier-quality issues lean toward them
+supplier_p_late = (spark.table(f"{BRONZE}.erp_sourcing").filter("sourcing_role = 'primary'").select("part_id", "supplier_id")
+                   .join(spark.table(f"{BRONZE}.erp_suppliers").select("supplier_id", "p_late"), "supplier_id")
+                   .toPandas().set_index("part_id").p_late.to_dict())
 bom = spark.table(f"{BRONZE}.erp_bom").toPandas().sort_values(["model_id", "part_id"]).reset_index(drop=True)
 cat_of = dict(zip(parts.part_id, parts.component_category))
 
@@ -155,7 +162,10 @@ def add_issue(program, model, build_id, phase, found):
     part = int(pool[int(rng.integers(0, len(pool)))])
     sev, _, typical = SEVERITY[int(rng.choice(4, p=[s[1] for s in SEVERITY]))]
     closed = found + days(max(1, rng.lognormal(np.log(typical), 0.6)))
-    issues.append([None, program, build_id, phase, part, cat, sev, pick([c for c, _ in ROOT_CAUSE], [w for _, w in ROOT_CAUSE]),
+    # supplier quality weight scales with the supplier's unreliability: about 0.6x for the best, 2x for the worst
+    quality_lift = 0.5 + 8 * supplier_p_late.get(part, 0.06)
+    weights = [w * (quality_lift if c == "Supplier quality" else 1) for c, w in ROOT_CAUSE]
+    issues.append([None, program, build_id, phase, part, cat, sev, pick([c for c, _ in ROOT_CAUSE], weights),
                    found.date(), closed.date() if closed <= SNAPSHOT else None])
 
 for b in builds.itertuples():

@@ -14,6 +14,7 @@ SAMPLE_QUESTIONS = [
     "How accurate is the vehicle build forecast 13 weeks out?",
     "Where does engineering change cycle time go?",
     "Which parts are we holding that a pending engineering change will supersede?",
+    "How have real-world EV recalls changed by component since 2020?",
 ]
 
 EXAMPLES = [
@@ -47,6 +48,9 @@ EXAMPLES = [
     ("Which parts are we holding that a pending engineering change will supersede?",
      f"SELECT site_id, part_number, part_name, eco_id, eco_status, change_type, signal, stock_at_risk_value, recommended_action\n"
      f"FROM {G}.mart_eco_supply_exposure ORDER BY stock_at_risk_value DESC LIMIT 25"),
+    ("How have real-world EV recalls changed by component and year?",
+     f"SELECT `Report Year`, `Component Category`, MEASURE(`Recall Campaigns`) AS campaigns, MEASURE(`OTA Share`) AS ota_share\n"
+     f"FROM {G}.ev_recall_metrics WHERE `Report Year` >= 2020 GROUP BY ALL ORDER BY `Report Year`, campaigns DESC"),
     ("How accurate is the forecast by horizon?",
      f"SELECT `Forecast Type`, `Model`, `Horizon Weeks`, MEASURE(`WAPE`) AS wape\n"
      f"FROM {G}.forecast_accuracy_metrics GROUP BY ALL ORDER BY `Forecast Type`, `Horizon Weeks`, `Model`"),
@@ -79,6 +83,9 @@ INSTRUCTIONS = [
     "ECO, ECN, change order and engineering change all mean the same thing here. Cycle time = created to implemented.",
     "mart_bom_current is today's multi-level BOM flattened: system > assembly > part with quantity per vehicle and cost. "
     "mart_eco_supply_exposure lists parts a pending change will replace or remove, with the stock and buy signal at risk.",
+    "ev_recall_metrics is REAL public data from NHTSA (every US recall campaign involving a battery-electric vehicle since 2012), "
+    "unlike the rest of this space, which is a simulated company. Say which one an answer comes from. EV units affected only "
+    "counts campaigns where every vehicle is an EV, because mixed campaigns report units for petrol vehicles too.",
 ]
 
 space = {
@@ -88,7 +95,7 @@ space = {
         "metric_views": sorted([{"identifier": f"{G}.{v}"} for v in [
             "supplier_delivery_metrics", "sourcing_risk_metrics", "inventory_planning_metrics",
             "forecast_accuracy_metrics", "policy_simulation_metrics", "engineering_change_metrics",
-            "prototype_issue_metrics"]], key=lambda x: x["identifier"]),
+            "prototype_issue_metrics", "ev_recall_metrics"]], key=lambda x: x["identifier"]),
         "tables": sorted([
             {"identifier": f"{G}.mart_buy_signals", "column_configs": sorted([
                 {"column_name": "signal", "enable_format_assistance": True, "enable_entity_matching": True},

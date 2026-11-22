@@ -19,6 +19,7 @@ datasets = [
     metric_view("mv_policy", "policy_simulation_metrics"),
     metric_view("mv_eco", "engineering_change_metrics"),
     metric_view("mv_issues", "prototype_issue_metrics"),
+    metric_view("mv_recalls", "ev_recall_metrics"),
     {"name": "ds_burndown", "displayName": "Issue burndown",
      "queryLines": sql("SELECT week_start, program_name, severity, issues_open FROM mart_issue_burndown")},
     {"name": "ds_churn", "displayName": "BOM churn",
@@ -274,6 +275,15 @@ product = [
         ("recommended_action", "Action")],
         "Parts being superseded by a pending engineering change", pos(0, 17, 12, 7),
         orders=[{"direction": "DESC", "expression": "`stock_at_risk_value`"}]),
+]
+product += [
+    text("title-recalls", "## Real-world EV recalls (public NHTSA data)\nEvery US recall campaign since 2012 that involved a battery-electric "
+         "vehicle, loaded from NHTSA's bulk file with auto loader. Software and electronics now drive more EV recalls than the battery, "
+         "and about one in five is fixed over the air.", pos(0, 24, 12, 2)),
+    chart("recalls-year", "bar", "mv_recalls", "Report Year", [(m("Recall Campaigns"), "Recall campaigns")],
+          "EV recall campaigns by year and component", pos(0, 26, 8, 6), color="Component Category", x_type="categorical"),
+    chart("recalls-ota", "line", "mv_recalls", "Report Year", [(m("OTA Share"), "Over-the-air share")],
+          "Share of EV recalls fixed over the air", pos(8, 26, 4, 6), fmt=PCT, x_type="categorical"),
 ]
 product[5]["widget"]["spec"]["encodings"]["x"]["scale"].update(PHASES)
 product[6]["widget"]["spec"]["encodings"]["x"]["scale"].update(PHASES)

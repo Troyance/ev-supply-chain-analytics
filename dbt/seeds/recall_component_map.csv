@@ -1,0 +1,25 @@
+priority,component_like,component_category
+1,%PROPULSION SYSTEM%,Battery and high voltage
+2,%TRACTION BATTERY%,Battery and high voltage
+3,%HIGH VOLTAGE%,Battery and high voltage
+4,%CHARGING%,Battery and high voltage
+5,ELECTRICAL SYSTEM:WIRING%,Wiring and harnesses
+6,%SOFTWARE%,Software and electronics
+7,BACK OVER PREVENTION%,Software and electronics
+8,FORWARD COLLISION%,Software and electronics
+9,LANE DEPARTURE%,Software and electronics
+10,ELECTRICAL SYSTEM%,Software and electronics
+11,EXTERIOR LIGHTING%,Software and electronics
+12,SERVICE BRAKES%,Brakes
+13,STEERING%,Steering and suspension
+14,SUSPENSION%,Steering and suspension
+15,WHEELS%,Steering and suspension
+16,TIRES%,Steering and suspension
+17,AIR BAGS%,Restraints
+18,SEAT BELTS%,Restraints
+19,SEATS%,Body and interior
+20,STRUCTURE%,Body and interior
+21,LATCHES%,Body and interior
+22,VISIBILITY%,Body and interior
+23,POWER TRAIN%,Drivetrain
+24,%,Other

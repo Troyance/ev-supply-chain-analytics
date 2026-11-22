@@ -18,3 +18,7 @@ SELECT *, current_timestamp() AS _ingested_at, 'samples.tpch.region' AS _source 
 
 CREATE OR REPLACE TABLE workspace.ev_bronze.tpch_part AS
 SELECT *, current_timestamp() AS _ingested_at, 'samples.tpch.part' AS _source FROM samples.tpch.part;
+
+-- landing zone for files that come from outside (here: nhtsa recall snapshots). auto loader reads from it.
+CREATE VOLUME IF NOT EXISTS workspace.ev_bronze.landing
+  COMMENT 'Raw files landed from external sources, one folder per source. Read incrementally by auto loader.';

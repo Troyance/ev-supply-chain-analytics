@@ -34,6 +34,8 @@ models:
         +databricks_tags: {layer: silver, domain: supply_chain, certified: "true", model_type: fact}
       product:
         +databricks_tags: {layer: silver, domain: product_development, certified: "true"}
+      recalls:
+        +databricks_tags: {layer: silver, domain: vehicle_quality, certified: "true", source: nhtsa_public}
     marts:
       +schema: ev_gold
       +materialized: table

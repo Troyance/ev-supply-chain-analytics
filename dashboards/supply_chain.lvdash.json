@@ -36,6 +36,11 @@
    "asset_name": "workspace.ev_gold.prototype_issue_metrics"
   },
   {
+   "name": "mv_recalls",
+   "displayName": "ev_recall_metrics",
+   "asset_name": "workspace.ev_gold.ev_recall_metrics"
+  },
+  {
    "name": "ds_burndown",
    "displayName": "Issue burndown",
    "queryLines": [
@@ -3213,6 +3218,148 @@
       "y": 17,
       "width": 12,
       "height": 7
+     }
+    },
+    {
+     "widget": {
+      "name": "title-recalls",
+      "multilineTextboxSpec": {
+       "lines": [
+        "## Real-world EV recalls (public NHTSA data)\nEvery US recall campaign since 2012 that involved a battery-electric vehicle, loaded from NHTSA's bulk file with auto loader. Software and electronics now drive more EV recalls than the battery, and about one in five is fixed over the air."
+       ]
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 24,
+      "width": 12,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "recalls-year",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "mv_recalls",
+         "fields": [
+          {
+           "name": "Report Year",
+           "expression": "`Report Year`"
+          },
+          {
+           "name": "measure(Recall Campaigns)",
+           "expression": "MEASURE(`Recall Campaigns`)"
+          },
+          {
+           "name": "Component Category",
+           "expression": "`Component Category`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "Report Year",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Report Year"
+        },
+        "y": {
+         "scale": {
+          "type": "quantitative"
+         },
+         "fieldName": "measure(Recall Campaigns)",
+         "displayName": "Recall campaigns"
+        },
+        "color": {
+         "fieldName": "Component Category",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Component Category"
+        }
+       },
+       "frame": {
+        "title": "EV recall campaigns by year and component",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 26,
+      "width": 8,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "recalls-ota",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "mv_recalls",
+         "fields": [
+          {
+           "name": "Report Year",
+           "expression": "`Report Year`"
+          },
+          {
+           "name": "measure(OTA Share)",
+           "expression": "MEASURE(`OTA Share`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "line",
+       "encodings": {
+        "x": {
+         "fieldName": "Report Year",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Report Year"
+        },
+        "y": {
+         "scale": {
+          "type": "quantitative"
+         },
+         "fieldName": "measure(OTA Share)",
+         "displayName": "Over-the-air share",
+         "format": {
+          "type": "number-percent",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        }
+       },
+       "frame": {
+        "title": "Share of EV recalls fixed over the air",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 8,
+      "y": 26,
+      "width": 4,
+      "height": 6
      }
     }
    ]

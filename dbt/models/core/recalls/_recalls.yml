@@ -1,0 +1,130 @@
+version: 2
+models:
+- name: fct_recall_campaign
+  description: 'Grain: one NHTSA recall campaign (real public data). Units affected live here because NHTSA repeats them on every vehicle line.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: recall_campaign_key
+    data_type: string
+    description: Recall campaign.
+    constraints:
+    - type: not_null
+    data_tests:
+    - unique
+    - not_null
+  - name: report_date_key
+    data_type: int
+    description: Report date.
+  - name: campaign_id
+    data_type: string
+    description: NHTSA campaign number, e.g. 22V037000.
+  - name: manufacturer
+    data_type: string
+    description: Company that filed the recall.
+  - name: report_date
+    data_type: date
+    description: Date the defect was reported to NHTSA.
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: date'2009-01-01'
+        config: &id001
+          severity: warn
+  - name: units_affected
+    data_type: bigint
+    description: Potential vehicles affected, whole campaign.
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 0
+        config: *id001
+  - name: initiated_by
+    data_type: string
+    description: MFR (manufacturer), ODI or OVSC (NHTSA).
+  - name: primary_component_category
+    data_type: string
+    description: Most common component category across the campaign's lines.
+  - name: involves_ev
+    data_type: boolean
+    description: At least one battery-electric vehicle in the campaign.
+  - name: is_ev_only
+    data_type: boolean
+    description: Every vehicle in the campaign is battery-electric.
+  - name: is_ota_remedy
+    data_type: boolean
+    description: Remedy is an over-the-air software update (from the remedy text).
+  - name: do_not_drive
+    data_type: boolean
+    description: Owners told not to drive.
+  - name: park_outside
+    data_type: boolean
+    description: Owners told to park outside.
+  - name: vehicle_lines
+    data_type: bigint
+    description: NHTSA records in the campaign.
+  - name: models_affected
+    data_type: bigint
+    description: Distinct make + model.
+  - name: defect_summary
+    data_type: string
+    description: NHTSA defect summary.
+- name: fct_recall_vehicle_line
+  description: 'Grain: one NHTSA record - campaign x make x model x model year x component. No units on purpose.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: recall_line_key
+    data_type: string
+    description: Recall line.
+    constraints:
+    - type: not_null
+    data_tests:
+    - unique
+    - not_null
+  - name: recall_campaign_key
+    data_type: string
+    description: Recall campaign.
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('fct_recall_campaign')
+          field: recall_campaign_key
+  - name: record_id
+    data_type: bigint
+    description: NHTSA record id.
+    data_tests:
+    - unique
+    - not_null
+  - name: campaign_id
+    data_type: string
+    description: NHTSA campaign number, e.g. 22V037000.
+  - name: make
+    data_type: string
+    description: Make.
+  - name: model
+    data_type: string
+    description: Model as NHTSA spells it.
+  - name: model_year
+    data_type: int
+    description: Model year, null if unknown.
+    data_tests:
+    - dbt_utils.accepted_range:
+        arguments:
+          min_value: 1950
+          max_value: 2028
+        config: *id001
+  - name: component_name
+    data_type: string
+    description: NHTSA component, e.g. ELECTRICAL SYSTEM:PROPULSION SYSTEM:TRACTION BATTERY.
+  - name: component_category
+    data_type: string
+    description: Component category from the seed map.
+  - name: powertrain
+    data_type: string
+    description: BEV for battery-electric, null otherwise.
+  - name: is_ev
+    data_type: boolean
+    description: Battery-electric vehicle (curated seed).

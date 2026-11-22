@@ -30,13 +30,18 @@ resources:
             file:
               path: ../sql/01_bronze.sql
 
+        - task_key: ingest_nhtsa_recalls
+          depends_on: [{task_key: bronze}]
+          environment_key: spark
+          notebook_task: {notebook_path: ../notebooks/02_ingest_nhtsa_recalls.py}   # auto loader: only new files in the landing volume
+
         - task_key: production
           depends_on: [{task_key: bronze}]
           environment_key: spark
           notebook_task: {notebook_path: ../notebooks/03_production.py}
 
         - task_key: product_development
-          depends_on: [{task_key: production}]
+          depends_on: [{task_key: purchasing}]   # reads supplier reliability for supplier-quality issues
           environment_key: spark
           notebook_task: {notebook_path: ../notebooks/05_product_development.py}
 
@@ -56,7 +61,7 @@ resources:
           notebook_task: {notebook_path: ../notebooks/07_forecast.py}
 
         - task_key: dbt_build
-          depends_on: [{task_key: forecast}, {task_key: product_development}]
+          depends_on: [{task_key: forecast}, {task_key: product_development}, {task_key: ingest_nhtsa_recalls}]
           environment_key: dbt
           dbt_task:
             project_directory: ../dbt

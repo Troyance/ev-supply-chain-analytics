@@ -43,6 +43,16 @@ sources:
       - name: plm_engineering_changes
       - name: plm_eco_affected_items
 
+  - name: nhtsa
+    description: Real public data - every US vehicle recall since 2010 (NHTSA flat file), loaded by auto loader. Full snapshots, so the same record repeats across files.
+    schema: "{{ var('raw_schema') }}"
+    tables:
+      - name: nhtsa_recalls
+        config:
+          loaded_at_field: _ingested_at
+          freshness:
+            warn_after: {count: 45, period: day}
+
   - name: service
     schema: "{{ var('raw_schema') }}"
     tables:

@@ -1,0 +1,24 @@
+version: 2
+seeds:
+  - name: ev_models
+    description: Curated list of battery-electric models as NHTSA spells them, with the first model year that was electric (some names, like the Acura ZDX, were petrol before). Pattern matching alone catches RVs, buses and cement mixers.
+    columns:
+      - name: make
+        data_tests: [not_null]
+      - name: model_like
+        description: SQL LIKE pattern on the NHTSA model name.
+        data_tests: [not_null]
+      - name: min_model_year
+        data_tests: [not_null]
+      - name: powertrain
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [BEV]
+  - name: recall_component_map
+    description: Maps NHTSA component names (like ELECTRICAL SYSTEM:PROPULSION SYSTEM:TRACTION BATTERY) to readable categories. Lowest priority number wins.
+    columns:
+      - name: priority
+        data_tests: [unique, not_null]
+  - name: policies
+    description: Ordering policies compared in the simulation.
