@@ -31,3 +31,7 @@ jobs:
         run: |
           ../.venv/bin/dbt deps
           ../.venv/bin/dbt build --target ci --profiles-dir ci --exclude tag:simulation
+      # drop the ci_ schemas whether the build passed or not
+      - if: always()
+        working-directory: dbt
+        run: ../.venv/bin/dbt run-operation drop_ci_schemas --target ci --profiles-dir ci
