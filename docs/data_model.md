@@ -30,6 +30,8 @@ Rows are business processes (facts), columns are conformed dimensions. An x mean
 | `fct_policy_simulation` | policy x site x part x day | periodic snapshot | x | x | | x | | | | x | |
 | `fct_engineering_change` | one engineering change (ECO) | accumulating snapshot | x | | | x (via bridge) | | | | | x |
 | `fct_issue` | one issue | transaction | x | | | x | | | | | x |
+| `fct_recall_campaign` | one nhtsa recall campaign (real data) | transaction | x | | | | | | | | |
+| `fct_recall_vehicle_line` | campaign x make x model x year x component (real data) | transaction | | | | | | | | | |
 
 `bridge_part_supplier` sits between `dim_part` and `dim_supplier` because sourcing is many to many - about 13% of
 parts are dual-sourced, with a volume share on each side.
@@ -41,6 +43,12 @@ engineering BOM explodes to exactly the flat manufacturing BOM in `bridge_vehicl
 
 `dim_supplier_tier_history` is a type 2 dimension (valid_from / valid_to) so a 2022 delivery is judged by the
 tier the supplier had in 2022, not today's.
+
+The two recall facts are real public data. Units affected are a campaign-level number NHTSA repeats on every vehicle
+line, so they live on `fct_recall_campaign`; the line table carries none, so summing can't double count.
+
+`dim_part` holds current parts and parts superseded by engineering changes (`lifecycle_status`), so purchase and
+demand history from before a change still points at the part that was really used.
 
 ## dimensions
 

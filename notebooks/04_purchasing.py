@@ -1,9 +1,10 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # purchasing
+# MAGIC # purchasing: suppliers and sourcing
 # MAGIC
-# MAGIC Generates PO history the way it actually comes about: from the build schedule. Every week, each BOM part
-# MAGIC needs (builds x qty per vehicle) units at each plant, and the part's supplier delivers against that.
+# MAGIC Sets up the supply base: which suppliers are active, how reliable they really are, and who supplies each part.
+# MAGIC PO delivery history is generated later (`05b_po_deliveries`), after the plm step has built BOM history, so
+# MAGIC deliveries follow the BOM that was valid each week.
 # MAGIC
 # MAGIC tpch still provides the supplier master (names, countries, regions). Everything else is calibrated to
 # MAGIC look like a real EV maker:
@@ -15,7 +16,7 @@
 # MAGIC - the 2021-22 chip shortage hits electronics: longer quoted lead times and a lot more late deliveries
 # MAGIC - a handful of suppliers start slipping in 2024 and keep getting worse
 # MAGIC
-# MAGIC Outputs to `ev_bronze`: `erp_suppliers`, `erp_sourcing`, `erp_po_deliveries`. The supplier table also holds each
+# MAGIC Outputs to `ev_bronze`: `erp_suppliers`, `erp_sourcing`. The supplier table also holds each
 # MAGIC supplier's true reliability (p_late, is_slipping). dbt staging drops those - analytics has to find them.
 
 # COMMAND ----------
@@ -146,94 +147,9 @@ sourcing = save(
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## delivery lines
-# MAGIC
-# MAGIC Weekly requirement per plant and part = builds x qty per vehicle. Local body and wiring suppliers deliver
-# MAGIC daily (5 lines a week), everyone else weekly. Each line was ordered one quoted lead time before it was
-# MAGIC promised, and arrives on time or a few days early - unless the supplier is late.
-
-# COMMAND ----------
-
-requirements = (spark.table(f"{BRONZE}.mes_vehicle_builds")
-                .join(spark.table(f"{BRONZE}.erp_bom"), "model_id")
-                .groupBy("site_id", "part_id", "week_start")
-                .agg(F.sum(F.col("units") * F.col("qty_per_vehicle")).alias("weekly_qty")))
-
-lines = (requirements
-         .join(sourcing, "part_id")
-         .join(catalog.select("part_id", "component_category"), "part_id")
-         .join(active.select("supplier_id", "region", "quoted_lead_time_days", "transit_days",
-                             "p_late", "late_mean_days", "is_slipping"), "supplier_id")
-         .withColumn("deliveries_per_week",
-                     F.when((region == "America") & F.col("component_category").isin("Body & chassis", "Wiring & harnesses"), 5)
-                      .otherwise(1))
-         .withColumn("day_offset", F.explode(F.sequence(F.lit(0), F.col("deliveries_per_week") - 1)))
-         .withColumn("quantity", F.round(F.col("weekly_qty") * F.col("volume_share") / F.col("deliveries_per_week")).cast("int"))
-         .filter("quantity > 0")
-         .withColumn("promised_date", F.date_add("week_start", F.col("day_offset")))
-         .withColumn("line_key", F.xxhash64("site_id", "part_id", "supplier_id", "promised_date")))
-
-is_elec = F.col("component_category") == "Electronics"
-severity = F.when(is_elec, shortage_severity(F.col("promised_date"))).otherwise(0.0)
-months_slipping = F.when(F.col("is_slipping"),
-                         F.greatest(F.lit(0.0), F.months_between("promised_date", F.lit("2024-01-01")))).otherwise(0.0)
-
-lines = (lines
-         .withColumn("severity", severity)
-         # chip shortage: quoted lead times for electronics stretch by up to 8 weeks
-         .withColumn("lead_quoted", F.col("quoted_lead_time_days") + F.round(56 * F.col("severity")).cast("int"))
-         .withColumn("order_date", F.date_sub("promised_date", F.col("lead_quoted")))
-         .withColumn("p_late_eff", F.least(F.lit(0.9),
-                     F.col("p_late") + 0.35 * F.col("severity") + 0.02 * months_slipping))
-         .withColumn("is_late", uniform("line_key", salt="late") < F.col("p_late_eff"))
-         .withColumn("days_late",
-                     F.when(F.col("is_late"),
-                            F.ceil(-F.log(uniform("line_key", salt="mag")) * F.col("late_mean_days")
-                                   * (1 + 1.5 * F.col("severity")) + 0.4 * months_slipping))
-                      .otherwise(-F.floor(uniform("line_key", salt="early") * 3)))  # 0-2 days early
-         .withColumn("received_date", F.date_add("promised_date", F.col("days_late").cast("int")))
-         .withColumn("ship_date", F.date_sub("received_date", F.col("transit_days")))
-         .filter(F.col("received_date") <= F.lit(SNAPSHOT_DATE).cast("date")))   # open lines aren't history yet
-
-po = save(
-    lines.select(
-        F.col("line_key").alias("po_line_id"),
-        "site_id", "part_id", "supplier_id", "sourcing_role", "quantity",
-        (F.col("quantity") * F.col("unit_price")).cast("decimal(14,2)").alias("net_amount"),
-        "order_date", "ship_date", "promised_date", "received_date",
-        F.when(region == "America", F.when(bucket("line_key", n=5, salt="mode") == 0, "Rail").otherwise("Truck"))
-         .otherwise("Ship").alias("ship_mode"),
-        F.datediff("received_date", "order_date").alias("lead_time_days"),
-        F.col("days_late").cast("int").alias("days_late"),
-        (F.col("days_late") <= 0).alias("is_on_time")),
-    "erp_po_deliveries")
-
-# COMMAND ----------
-
 import json
-
-yearly = (po.groupBy(F.year("received_date").alias("y"))
-          .agg(F.round(F.sum("net_amount") / 1e9, 2).alias("spend_bn"), F.count("*").alias("lines"))
-          .orderBy("y").collect())
-by_region = (po.join(active.select("supplier_id", "region"), "supplier_id").groupBy("region")
-             .agg(F.round(F.avg("lead_time_days"), 1).alias("lead"),
-                  F.round(F.avg(F.col("is_on_time").cast("int")), 3).alias("otd"),
-                  F.countDistinct("supplier_id").alias("suppliers")).collect())
-elec = (po.join(catalog, "part_id").filter("component_category = 'Electronics'")
-        .groupBy(F.year("order_date").alias("y")).agg(F.round(F.avg("lead_time_days"), 1).alias("lead"),
-                                                       F.round(F.avg(F.col("is_on_time").cast("int")), 3).alias("otd"))
-        .orderBy("y").collect())
-
-result = {
-    "active_suppliers": active.count(),
-    "suppliers_with_volume": po.select("supplier_id").distinct().count(),
-    "parts_dual_sourced": sourcing.filter("sourcing_role = 'secondary'").count(),
-    "po_lines": po.count(),
-    "on_time_rate": round(po.agg(F.avg(F.col("is_on_time").cast("int"))).first()[0], 3),
-    "spend_by_year_bn": {r.y: r.spend_bn for r in yearly},
-    "by_region": {r.region: {"lead_days": r.lead, "on_time": r.otd, "suppliers": r.suppliers} for r in by_region},
-    "electronics_by_order_year": {r.y: {"lead_days": r.lead, "on_time": r.otd} for r in elec},
-}
+result = {"active_suppliers": active.count(),
+          "parts_single_sourced": sourcing.filter("sourcing_role = 'primary' and volume_share = 1.0").count(),
+          "parts_dual_sourced": sourcing.filter("sourcing_role = 'secondary'").count()}
 print(json.dumps(result, indent=2))
 dbutils.notebook.exit(json.dumps(result))

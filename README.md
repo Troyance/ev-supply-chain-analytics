@@ -47,8 +47,23 @@ engineering changes (ECOs) that fix them and update the BOM.
 - **the bom explodes recursively** for any date, so "what was in the vehicle at build VP1" is a query
 - **engineering and manufacturing boms are reconciled by a test** - today's engineering bom must explode to exactly the
   flat bom purchasing plans with. that test caught an id collision the first time
+- **history follows the bom that was valid at the time** - before a change cut in a new part, the plant consumed and
+  bought the old one. 16% of historical demand ($2.8B) belongs to parts that have since been superseded, which a
+  today's-bom view would have booked against their replacements
+- **supplier quality sits next to delivery** - supplier-caused issues per million units on the scorecard. tier c
+  (late) suppliers average 1.6x the quality issues of tier a
 - **pending changes flag supply risk** - parts a pending change will replace or remove show up next to their buy
   signal and stock, so nobody reorders a part that's about to be superseded
+
+## Real data: NHTSA recalls
+
+Alongside the simulated company there's one real public source: every US vehicle recall since 2010 from NHTSA's bulk
+file. `scripts/land_nhtsa_recalls.sh` drops each snapshot into a Unity Catalog volume (serverless here has no internet,
+so the script plays the part of fivetran), and auto loader ingests new files incrementally. Real data brought real
+problems: the file is a full snapshot every time (deduped in staging), pattern-matching "EV" caught RVs and cement
+mixers (fixed with a curated seed of EV models), and units affected repeat on every vehicle line (so they live on a
+campaign-grain fact). Since 2022, software and electronics drive more EV recalls than the battery, and about one in
+five is fixed over the air.
 
 ## Data model
 
@@ -98,9 +113,9 @@ Ratios are always sum / sum, never averaged. The dashboard and the genie agent b
 - **forecast** - lightgbm (m5 style: one global model, direct multi-horizon, tweedie for lumpy service parts) gets
   build forecasts to 7.5% wape vs 18.3% for the naive baseline
 - **ordering policies** - six policies replayed on a year of real demand. at a steady plant, carrying more safety
-  stock pays for itself (high service costs $125M a year against $305M for the current rules). at the ramping
+  stock pays for itself (high service costs $197M a year against $394M for the current rules). at the ramping
   plant every policy gets the same launch pre-build, but buffers sized from trailing usage fall further behind as
-  volume climbs - shortages grow from 1% of demand to 34% by month nine. only planning off the build schedule (mrp)
+  volume climbs - shortages grow from 1% of demand to 33% by month nine. only planning off the build schedule (mrp)
   keeps up, at 99.8% fill
 
 ## Running it

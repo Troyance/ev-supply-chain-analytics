@@ -134,7 +134,8 @@ models:
     data_type: string
     description: Display name.
 - name: dim_part
-  description: 'The single part dimension: about 1,900 parts with master data and MRP planning parameters.'
+  description: 'The single part dimension: about 1,900 current parts with master data and MRP planning parameters, plus parts superseded by engineering
+    changes (kept so their history still has a part to point at).'
   config:
     contract:
       enforced: true
@@ -212,6 +213,18 @@ models:
   - name: moq
     data_type: bigint
     description: Minimum order quantity.
+  - name: lifecycle_status
+    data_type: string
+    description: Active, or Superseded when an engineering change replaced or removed it.
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - Active
+          - Superseded
+  - name: superseded_by_part_id
+    data_type: bigint
+    description: For superseded parts, the part that replaced it.
 - name: dim_supplier
   description: Active suppliers (about 800) with their current tier.
   config:

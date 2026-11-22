@@ -50,8 +50,13 @@ resources:
           environment_key: spark
           notebook_task: {notebook_path: ../notebooks/04_purchasing.py}
 
+        - task_key: po_deliveries
+          depends_on: [{task_key: product_development}]   # deliveries follow the bom valid each week
+          environment_key: spark
+          notebook_task: {notebook_path: ../notebooks/05b_po_deliveries.py}
+
         - task_key: planning_setup
-          depends_on: [{task_key: purchasing}]
+          depends_on: [{task_key: po_deliveries}]
           environment_key: spark
           notebook_task: {notebook_path: ../notebooks/06_planning_setup.py}
 

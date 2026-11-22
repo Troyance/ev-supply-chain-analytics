@@ -107,7 +107,7 @@ vehicle_item = {}
 next_id = 10_000_001
 for m in ["PU", "SUV", "VAN"]:
     vehicle_item[m] = next_id
-    items.append((next_id, f"VEH-{m}", f"{model_names[m]} vehicle", "vehicle", None, "Released"))
+    items.append((next_id, f"VEH-{m}", f"{model_names[m]} vehicle", "vehicle", None, "Released", None))
     next_id += 1
 
 assembly_of = {}                        # (model, part) -> assembly item id
@@ -116,14 +116,14 @@ for m in ["PU", "SUV", "VAN"]:
     start = program_start[m].date()
     for cat, (sys_code, sys_name) in SYSTEMS.items():
         sys_id = next_id; next_id += 1
-        items.append((sys_id, f"{sys_code}-{m}", f"{sys_name} ({m})", "system", None, "Released"))
+        items.append((sys_id, f"{sys_code}-{m}", f"{sys_name} ({m})", "system", None, "Released", None))
         lines.append((vehicle_item[m], sys_id, 1, start, None, None))
         n_asm = int(rng.integers(4, 8))
         asm_ids = []
         for k in range(n_asm):
             asm_id = next_id; next_id += 1
             asm_ids.append(asm_id)
-            items.append((asm_id, f"ASM-{sys_code[4:]}-{m}-{k + 1:02d}", f"{ASSEMBLY_WORDS[sys_code][k]} ({m})", "assembly", None, "Released"))
+            items.append((asm_id, f"ASM-{sys_code[4:]}-{m}-{k + 1:02d}", f"{ASSEMBLY_WORDS[sys_code][k]} ({m})", "assembly", None, "Released", None))
             lines.append((sys_id, asm_id, 1, start, None, None))
         model_parts = bom[(bom.model_id == m) & (bom.part_id.map(cat_of) == cat)]
         for r in model_parts.itertuples():
@@ -132,7 +132,7 @@ for m in ["PU", "SUV", "VAN"]:
             lines.append((asm, int(r.part_id), int(r.qty_per_vehicle), start, None, None))
 
 for r in parts.itertuples():
-    items.append((int(r.part_id), r.part_number, r.part_name, "part", r.component_category, "Released"))
+    items.append((int(r.part_id), r.part_number, r.part_name, "part", r.component_category, "Released", None))
 
 # COMMAND ----------
 
@@ -286,7 +286,7 @@ for a in affected.itertuples():
     before = eff - pd.Timedelta(days=1)
     pn = parts.set_index("part_id").loc[a.part_id]
     if a.change_type in ("Replace part", "Remove part"):
-        extra_items.append((obsolete_id, f"{pn.part_number}-OLD", f"{pn.part_name} (superseded)", "part", pn.component_category, "Obsolete"))
+        extra_items.append((obsolete_id, f"{pn.part_number}-OLD", f"{pn.part_name} (superseded)", "part", pn.component_category, "Obsolete", int(a.part_id)))
         extra_lines.append((asm, obsolete_id, int(lines.loc[mask, "qty"].iloc[0]), start, before, None))
         obsolete_id += 1
         if a.change_type == "Remove part":
@@ -298,7 +298,8 @@ for a in affected.itertuples():
         extra_lines.append((asm, a.part_id, old_qty, start, before, None))
     lines.loc[mask, ["effective_from", "eco_id"]] = [eff, a.eco_id]
 
-items = pd.DataFrame(items + extra_items, columns=["item_id", "item_number", "item_name", "item_type", "component_category", "lifecycle_status"])
+items = pd.DataFrame(items + extra_items, columns=["item_id", "item_number", "item_name", "item_type", "component_category",
+                                                  "lifecycle_status", "superseded_by_item_id"])
 lines = pd.concat([lines, pd.DataFrame(extra_lines, columns=lines.columns)], ignore_index=True)
 lines["effective_to"] = lines.effective_to.where(lines.effective_to.notna(), None)
 lines["eco_id"] = lines.eco_id.where(lines.eco_id.notna(), None)
@@ -307,13 +308,14 @@ lines = lines.sort_values(["parent_item_id", "child_item_id", "effective_from"])
 # COMMAND ----------
 
 for df, cols in [(issues, ["build_id", "closed_date"]), (ecos, ["issue_id", "submitted_date", "reviewed_date", "approved_date", "implemented_date"]),
-                 (items, ["component_category"])]:
+                 (items, ["component_category", "superseded_by_item_id"])]:
     for c in cols:
         df[c] = df[c].astype(object).where(df[c].notna(), None)
 
 save(programs, "plm_programs")
 save(builds, "plm_prototype_builds")
-save(items, "plm_items")
+spark.createDataFrame(items, "item_id bigint, item_number string, item_name string, item_type string, component_category string, lifecycle_status string, superseded_by_item_id bigint") \
+    .write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{BRONZE}.plm_items")
 spark.createDataFrame(lines, "parent_item_id bigint, child_item_id bigint, qty int, effective_from date, effective_to date, eco_id string") \
     .write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{BRONZE}.plm_bom_lines")
 spark.createDataFrame(issues, "issue_id string, program_id string, build_id string, found_phase string, part_id bigint, component_category string, severity string, root_cause string, found_date date, closed_date date") \
