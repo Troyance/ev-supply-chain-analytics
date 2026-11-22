@@ -15,6 +15,7 @@ SAMPLE_QUESTIONS = [
     "Where does engineering change cycle time go?",
     "Which parts are we holding that a pending engineering change will supersede?",
     "How have real-world EV recalls changed by component since 2020?",
+    "Is supplier quality related to delivery reliability?",
 ]
 
 EXAMPLES = [
@@ -51,6 +52,13 @@ EXAMPLES = [
     ("How have real-world EV recalls changed by component and year?",
      f"SELECT `Report Year`, `Component Category`, MEASURE(`Recall Campaigns`) AS campaigns, MEASURE(`OTA Share`) AS ota_share\n"
      f"FROM {G}.ev_recall_metrics WHERE `Report Year` >= 2020 GROUP BY ALL ORDER BY `Report Year`, campaigns DESC"),
+    ("Which suppliers have the worst quality?",
+     f"SELECT supplier_name, country, tier, quality_issues, severe_quality_issues, quality_ppm, on_time_rate\n"
+     f"FROM {G}.mart_supplier_scorecard WHERE quality_issues > 0 ORDER BY quality_issues DESC, quality_ppm DESC LIMIT 20"),
+    ("Is supplier quality related to delivery reliability?",
+     f"SELECT `Supplier Tier`, MEASURE(`Suppliers`) AS suppliers, MEASURE(`Quality Issues per Supplier`) AS quality_issues_per_supplier,\n"
+     f"       MEASURE(`Quality PPM`) AS quality_ppm\n"
+     f"FROM {G}.supplier_quality_metrics GROUP BY ALL ORDER BY `Supplier Tier`"),
     ("How accurate is the forecast by horizon?",
      f"SELECT `Forecast Type`, `Model`, `Horizon Weeks`, MEASURE(`WAPE`) AS wape\n"
      f"FROM {G}.forecast_accuracy_metrics GROUP BY ALL ORDER BY `Forecast Type`, `Horizon Weeks`, `Model`"),
@@ -86,6 +94,12 @@ INSTRUCTIONS = [
     "ev_recall_metrics is REAL public data from NHTSA (every US recall campaign involving a battery-electric vehicle since 2012), "
     "unlike the rest of this space, which is a simulated company. Say which one an answer comes from. EV units affected only "
     "counts campaigns where every vehicle is an EV, because mixed campaigns report units for petrol vehicles too.",
+    "Supplier quality: quality issues are issues with root cause supplier quality, attributed to the part's primary supplier. "
+    "Quality PPM = issue reports per million units delivered - always compute it as total issues / total units via "
+    "supplier_quality_metrics, never by averaging supplier PPMs. It counts issue reports, not defective parts, so it is far below "
+    "industry part PPM; use it to compare suppliers with each other.",
+    "Parts superseded by engineering changes stay in the data with lifecycle_status 'Superseded'. Demand and purchase history "
+    "follow the BOM that was valid each week, so history before a change shows the old part.",
 ]
 
 space = {
@@ -95,7 +109,7 @@ space = {
         "metric_views": sorted([{"identifier": f"{G}.{v}"} for v in [
             "supplier_delivery_metrics", "sourcing_risk_metrics", "inventory_planning_metrics",
             "forecast_accuracy_metrics", "policy_simulation_metrics", "engineering_change_metrics",
-            "prototype_issue_metrics", "ev_recall_metrics"]], key=lambda x: x["identifier"]),
+            "prototype_issue_metrics", "ev_recall_metrics", "supplier_quality_metrics"]], key=lambda x: x["identifier"]),
         "tables": sorted([
             {"identifier": f"{G}.mart_buy_signals", "column_configs": sorted([
                 {"column_name": "signal", "enable_format_assistance": True, "enable_entity_matching": True},

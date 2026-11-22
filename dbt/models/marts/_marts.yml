@@ -79,9 +79,12 @@ models:
   - name: severe_quality_issues
     data_type: bigint
     description: Of those, S1 (stop-ship) or S2 (major).
+  - name: units_delivered
+    data_type: bigint
+    description: Units delivered by this supplier, all time. The denominator for quality PPM.
   - name: quality_ppm
     data_type: double
-    description: Quality issues per million units delivered. The standard automotive supplier quality kpi.
+    description: Supplier-caused issue reports per million units delivered. Counts issue reports, not defective parts, so it sits far below industry part PPM - use it to compare suppliers with each other.
     data_tests:
     - dbt_utils.accepted_range:
         arguments:

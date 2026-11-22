@@ -20,6 +20,7 @@ datasets = [
     metric_view("mv_eco", "engineering_change_metrics"),
     metric_view("mv_issues", "prototype_issue_metrics"),
     metric_view("mv_recalls", "ev_recall_metrics"),
+    metric_view("mv_quality", "supplier_quality_metrics"),
     {"name": "ds_burndown", "displayName": "Issue burndown",
      "queryLines": sql("SELECT week_start, program_name, severity, issues_open FROM mart_issue_burndown")},
     {"name": "ds_churn", "displayName": "BOM churn",
@@ -30,7 +31,7 @@ datasets = [
                        "FROM mart_eco_supply_exposure")},
     {"name": "ds_scorecard", "displayName": "Supplier scorecard",
      "queryLines": sql("SELECT supplier_name, country, region, tier, spend, on_time_rate, on_time_rate_prior_12m,",
-                       "       on_time_rate_last_12m, lateness_trend_days_per_month, is_declining",
+                       "       on_time_rate_last_12m, lateness_trend_days_per_month, is_declining, quality_issues, quality_ppm",
                        "FROM mart_supplier_scorecard")},
     {"name": "ds_risk_top", "displayName": "Biggest high-risk parts",
      "queryLines": sql("SELECT part_number, part_name, component_category, top_supplier_name, top_supplier_country,",
@@ -165,11 +166,21 @@ suppliers = [
     table("declining", "ds_scorecard", [
         ("supplier_name", "Supplier"), ("country", "Country"), ("tier", "Tier"),
         ("lateness_trend_days_per_month", "Days later / month", NUM), ("on_time_rate_prior_12m", "On-time (prior 12m)", PCT),
-        ("on_time_rate_last_12m", "On-time (last 12m)", PCT), ("spend", "Spend", USD)],
-        "Declining suppliers (getting later every month)", pos(0, 16, 12, 6),
+        ("on_time_rate_last_12m", "On-time (last 12m)", PCT), ("quality_issues", "Quality issues"),
+        ("quality_ppm", "Quality PPM", {"type": "number-plain", "decimalPlaces": {"type": "max", "places": 2}}), ("spend", "Spend", USD)],
+        "Declining suppliers (getting later every month)", pos(0, 22, 12, 6),
         orders=[{"direction": "DESC", "expression": "`lateness_trend_days_per_month`"}]),
 ]
 suppliers[-1]["widget"]["queries"][0]["query"]["filters"] = [{"expression": "`is_declining`"}]
+suppliers[-1:-1] = [
+    chart("quality-tier", "bar", "mv_quality", "Supplier Tier", [(m("Quality Issues per Supplier"), "Quality issues per supplier")],
+          "Late suppliers are also lower quality", pos(0, 16, 6, 6), color="Supplier Tier", mappings=TIER_COLORS, fmt=NUM,
+          desc="Supplier-caused issues per supplier, by delivery tier. Tier C averages about 1.6x tier A."),
+    chart("quality-region", "bar", "mv_quality", "Supplier Region", [(m("Quality PPM"), "Quality PPM")],
+          "Quality PPM by supplier region", pos(6, 16, 6, 6),
+          fmt={"type": "number-plain", "decimalPlaces": {"type": "max", "places": 3}},
+          desc="Supplier-caused issue reports per million units delivered."),
+]
 
 # ---------- page 2: sourcing risk ----------
 risk = [
@@ -292,7 +303,7 @@ product[8]["widget"]["spec"]["encodings"]["x"]["scale"].update(PHASES)
 # ---------- global filters ----------
 filters = {"name": "filters", "displayName": "Filters", "pageType": "PAGE_TYPE_GLOBAL_FILTERS", "layoutVersion": "GRID_V1", "layout": [
     filt("filter-region", "filter-multi-select", "Supplier region",
-         [("mv_delivery", "Supplier Region"), ("mv_risk", "Supplier Region"), ("mv_planning", "Supplier Region"),
+         [("mv_delivery", "Supplier Region"), ("mv_quality", "Supplier Region"), ("mv_risk", "Supplier Region"), ("mv_planning", "Supplier Region"),
           ("ds_scorecard", "region"), ("ds_risk_top", "top_supplier_region"), ("ds_signals", "supplier_region")], pos(0, 0, 4, 2)),
     filt("filter-category", "filter-multi-select", "Component category",
          [("mv_delivery", "Component Category"), ("mv_risk", "Component Category"), ("mv_planning", "Component Category"),

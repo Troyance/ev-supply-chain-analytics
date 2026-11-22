@@ -77,6 +77,7 @@ select
     coalesce(q.quality_issues, 0)                                           as quality_issues,
     coalesce(q.severe_quality_issues, 0)                                    as severe_quality_issues,
     -- defects per million units delivered: the standard automotive supplier quality kpi
+    u.units_delivered,
     cast(coalesce(q.quality_issues, 0) * 1e6 / u.units_delivered as double) as quality_ppm
 from stats s
 join {{ ref('dim_supplier') }} d using (supplier_key)

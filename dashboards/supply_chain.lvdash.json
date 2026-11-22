@@ -41,6 +41,11 @@
    "asset_name": "workspace.ev_gold.ev_recall_metrics"
   },
   {
+   "name": "mv_quality",
+   "displayName": "supplier_quality_metrics",
+   "asset_name": "workspace.ev_gold.supplier_quality_metrics"
+  },
+  {
    "name": "ds_burndown",
    "displayName": "Issue burndown",
    "queryLines": [
@@ -68,7 +73,7 @@
    "displayName": "Supplier scorecard",
    "queryLines": [
     "SELECT supplier_name, country, region, tier, spend, on_time_rate, on_time_rate_prior_12m,\n",
-    "       on_time_rate_last_12m, lateness_trend_days_per_month, is_declining\n",
+    "       on_time_rate_last_12m, lateness_trend_days_per_month, is_declining, quality_issues, quality_ppm\n",
     "FROM mart_supplier_scorecard\n"
    ]
   },
@@ -668,6 +673,161 @@
     },
     {
      "widget": {
+      "name": "quality-tier",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "mv_quality",
+         "fields": [
+          {
+           "name": "Supplier Tier",
+           "expression": "`Supplier Tier`"
+          },
+          {
+           "name": "measure(Quality Issues per Supplier)",
+           "expression": "MEASURE(`Quality Issues per Supplier`)"
+          },
+          {
+           "name": "Supplier Tier",
+           "expression": "`Supplier Tier`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "Supplier Tier",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Supplier Tier"
+        },
+        "y": {
+         "scale": {
+          "type": "quantitative"
+         },
+         "fieldName": "measure(Quality Issues per Supplier)",
+         "displayName": "Quality issues per supplier",
+         "format": {
+          "type": "number-plain",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        },
+        "color": {
+         "fieldName": "Supplier Tier",
+         "scale": {
+          "type": "categorical",
+          "mappings": [
+           {
+            "value": "A",
+            "color": "#59A14F"
+           },
+           {
+            "value": "B",
+            "color": "#F28E2C"
+           },
+           {
+            "value": "C",
+            "color": "#E15759"
+           },
+           {
+            "value": "Unrated",
+            "color": "#9AA5B1"
+           }
+          ]
+         },
+         "displayName": "Supplier Tier"
+        }
+       },
+       "frame": {
+        "title": "Late suppliers are also lower quality",
+        "showTitle": true,
+        "showDescription": true,
+        "description": "Supplier-caused issues per supplier, by delivery tier. Tier C averages about 1.6x tier A."
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 16,
+      "width": 6,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "quality-region",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "mv_quality",
+         "fields": [
+          {
+           "name": "Supplier Region",
+           "expression": "`Supplier Region`"
+          },
+          {
+           "name": "measure(Quality PPM)",
+           "expression": "MEASURE(`Quality PPM`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "Supplier Region",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Supplier Region"
+        },
+        "y": {
+         "scale": {
+          "type": "quantitative"
+         },
+         "fieldName": "measure(Quality PPM)",
+         "displayName": "Quality PPM",
+         "format": {
+          "type": "number-plain",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 3
+          }
+         }
+        }
+       },
+       "frame": {
+        "title": "Quality PPM by supplier region",
+        "showTitle": true,
+        "showDescription": true,
+        "description": "Supplier-caused issue reports per million units delivered."
+       }
+      }
+     },
+     "position": {
+      "x": 6,
+      "y": 16,
+      "width": 6,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
       "name": "declining",
       "queries": [
        {
@@ -698,6 +858,14 @@
           {
            "name": "on_time_rate_last_12m",
            "expression": "`on_time_rate_last_12m`"
+          },
+          {
+           "name": "quality_issues",
+           "expression": "`quality_issues`"
+          },
+          {
+           "name": "quality_ppm",
+           "expression": "`quality_ppm`"
           },
           {
            "name": "spend",
@@ -770,6 +938,21 @@
           }
          },
          {
+          "fieldName": "quality_issues",
+          "displayName": "Quality issues"
+         },
+         {
+          "fieldName": "quality_ppm",
+          "displayName": "Quality PPM",
+          "format": {
+           "type": "number-plain",
+           "decimalPlaces": {
+            "type": "max",
+            "places": 2
+           }
+          }
+         },
+         {
           "fieldName": "spend",
           "displayName": "Spend",
           "format": {
@@ -792,7 +975,7 @@
      },
      "position": {
       "x": 0,
-      "y": 16,
+      "y": 22,
       "width": 12,
       "height": 6
      }
@@ -3390,7 +3573,7 @@
        {
         "name": "filter-region_1",
         "query": {
-         "datasetName": "mv_risk",
+         "datasetName": "mv_quality",
          "fields": [
           {
            "name": "Supplier Region",
@@ -3403,7 +3586,7 @@
        {
         "name": "filter-region_2",
         "query": {
-         "datasetName": "mv_planning",
+         "datasetName": "mv_risk",
          "fields": [
           {
            "name": "Supplier Region",
@@ -3416,6 +3599,19 @@
        {
         "name": "filter-region_3",
         "query": {
+         "datasetName": "mv_planning",
+         "fields": [
+          {
+           "name": "Supplier Region",
+           "expression": "`Supplier Region`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "filter-region_4",
+        "query": {
          "datasetName": "ds_scorecard",
          "fields": [
           {
@@ -3427,7 +3623,7 @@
         }
        },
        {
-        "name": "filter-region_4",
+        "name": "filter-region_5",
         "query": {
          "datasetName": "ds_risk_top",
          "fields": [
@@ -3440,7 +3636,7 @@
         }
        },
        {
-        "name": "filter-region_5",
+        "name": "filter-region_6",
         "query": {
          "datasetName": "ds_signals",
          "fields": [
@@ -3478,19 +3674,24 @@
           "queryName": "filter-region_2"
          },
          {
-          "fieldName": "region",
+          "fieldName": "Supplier Region",
           "displayName": "Supplier region",
           "queryName": "filter-region_3"
          },
          {
-          "fieldName": "top_supplier_region",
+          "fieldName": "region",
           "displayName": "Supplier region",
           "queryName": "filter-region_4"
          },
          {
-          "fieldName": "supplier_region",
+          "fieldName": "top_supplier_region",
           "displayName": "Supplier region",
           "queryName": "filter-region_5"
+         },
+         {
+          "fieldName": "supplier_region",
+          "displayName": "Supplier region",
+          "queryName": "filter-region_6"
          }
         ]
        }
