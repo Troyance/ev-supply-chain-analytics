@@ -20,17 +20,24 @@ Registered forecasting models live in `ev_ml`.
 
 Rows are business processes (facts), columns are conformed dimensions. An x means the fact joins to that dimension.
 
-| fact | grain | type | date | site | vehicle model | part | supplier | forecast series | forecast run | policy |
-|---|---|---|---|---|---|---|---|---|---|---|
-| `fct_vehicle_builds` | week x site x vehicle model | periodic snapshot | x | x | x | | | | | |
-| `fct_po_deliveries` | one delivery line | transaction | x | x | | x | x | | | |
-| `fct_part_demand` | week x site x part | periodic snapshot | x | x | | x | | | | |
-| `fct_inventory_snapshot` | snapshot date x site x part | periodic snapshot | x | x | | x | | | | |
-| `fct_forecast` | forecast run x series x origin week x target week | transaction (append-only) | x | x | x | x | | x | x | |
-| `fct_policy_simulation` | policy x site x part x day | periodic snapshot | x | x | | x | | | | x |
+| fact | grain | type | date | site | vehicle model | part | supplier | forecast series | forecast run | policy | program |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `fct_vehicle_builds` | week x site x vehicle model | periodic snapshot | x | x | x | | | | | | |
+| `fct_po_deliveries` | one delivery line | transaction | x | x | | x | x | | | | |
+| `fct_part_demand` | week x site x part | periodic snapshot | x | x | | x | | | | | |
+| `fct_inventory_snapshot` | snapshot date x site x part | periodic snapshot | x | x | | x | | | | | |
+| `fct_forecast` | forecast run x series x origin week x target week | transaction (append-only) | x | x | x | x | | x | x | | |
+| `fct_policy_simulation` | policy x site x part x day | periodic snapshot | x | x | | x | | | | x | |
+| `fct_engineering_change` | one engineering change (ECO) | accumulating snapshot | x | | | x (via bridge) | | | | | x |
+| `fct_issue` | one issue | transaction | x | | | x | | | | | x |
 
 `bridge_part_supplier` sits between `dim_part` and `dim_supplier` because sourcing is many to many - about 13% of
 parts are dual-sourced, with a volume share on each side.
+
+The product development side has its own bridges. `bridge_bom_structure` is the multi-level engineering BOM
+(vehicle > system > assembly > part), every line effective-dated, and `int_bom_explosion` walks it recursively for
+any date. `bridge_eco_item` links each engineering change to the parts it touches. A test checks that today's
+engineering BOM explodes to exactly the flat manufacturing BOM in `bridge_vehicle_model_part` (an EBOM / MBOM sync check).
 
 `dim_supplier_tier_history` is a type 2 dimension (valid_from / valid_to) so a 2022 delivery is judged by the
 tier the supplier had in 2022, not today's.
@@ -49,6 +56,11 @@ tier the supplier had in 2022, not today's.
 | `dim_forecast_series` | one row per thing we forecast | single `series_key` instead of nullable model_id / part_id |
 | `dim_forecast_run` | one row per forecast run | backtest or production, model version, mlflow run |
 | `dim_policy` | one row per ordering policy | |
+| `dim_program` | one row per vehicle program | a model launching at a plant, with its start of production |
+| `dim_prototype_build` | one row per prototype build | EP, VP or PPV, planned vs actual start, vehicles built |
+| `dim_item` | one row per plm item | vehicles, systems, assemblies, current and superseded parts |
+| `bridge_bom_structure` | one row per bom line version | multi-level engineering bom, effective-dated |
+| `bridge_eco_item` | one row per change x part | what each engineering change touches |
 
 ## conventions
 

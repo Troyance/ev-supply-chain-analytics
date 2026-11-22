@@ -12,6 +12,8 @@ SAMPLE_QUESTIONS = [
     "What should we expedite today?",
     "Which ordering policy is cheapest at Plant 2?",
     "How accurate is the vehicle build forecast 13 weeks out?",
+    "Where does engineering change cycle time go?",
+    "Which parts are we holding that a pending engineering change will supersede?",
 ]
 
 EXAMPLES = [
@@ -34,6 +36,17 @@ EXAMPLES = [
      f"SELECT `Site`, `Policy`, MEASURE(`Total Cost`) AS total_cost, MEASURE(`Stockout Rate`) AS stockout_rate,\n"
      f"       MEASURE(`Avg Inventory Value`) AS avg_inventory_value\n"
      f"FROM {G}.policy_simulation_metrics GROUP BY ALL ORDER BY `Site`, total_cost"),
+    ("Where does engineering change cycle time go, by phase raised?",
+     f"SELECT `Raised In Phase`, MEASURE(`Changes`) AS changes, MEASURE(`Avg Days In Review`) AS review_days,\n"
+     f"       MEASURE(`Avg Days To Approve`) AS approve_days, MEASURE(`Avg Days To Implement`) AS implement_days,\n"
+     f"       MEASURE(`Avg Cycle Time Days`) AS cycle_time_days\n"
+     f"FROM {G}.engineering_change_metrics GROUP BY ALL ORDER BY `Raised In Phase`"),
+    ("How do issues fall as a program matures?",
+     f"SELECT `Program`, `Found Phase`, MEASURE(`Issues`) AS issues, MEASURE(`ECO Conversion Rate`) AS issue_to_change_rate\n"
+     f"FROM {G}.prototype_issue_metrics GROUP BY ALL ORDER BY `Program`, `Found Phase`"),
+    ("Which parts are we holding that a pending engineering change will supersede?",
+     f"SELECT site_id, part_number, part_name, eco_id, eco_status, change_type, signal, stock_at_risk_value, recommended_action\n"
+     f"FROM {G}.mart_eco_supply_exposure ORDER BY stock_at_risk_value DESC LIMIT 25"),
     ("How accurate is the forecast by horizon?",
      f"SELECT `Forecast Type`, `Model`, `Horizon Weeks`, MEASURE(`WAPE`) AS wape\n"
      f"FROM {G}.forecast_accuracy_metrics GROUP BY ALL ORDER BY `Forecast Type`, `Horizon Weeks`, `Model`"),
@@ -58,6 +71,14 @@ INSTRUCTIONS = [
     "EOQ, DDMRP, MRP (schedule). Lead with Stockout Rate (share of parts that ran out at least once) and Total Cost; "
     "unit fill rate always looks high because cheap high-volume parts dominate it.",
     "Forecast accuracy compares LightGBM with a naive baseline. Lower WAPE is better. 'This year' means calendar 2026.",
+    "Product development: each vehicle program goes through prototype build phases EP (engineering prototype), VP (validation "
+    "prototype) and PPV (pre-production), then SOP (start of production). Programs: Pickup launch, SUV launch, Delivery van launch, "
+    "SUV plant 2 launch.",
+    "Issues are found in prototype builds and production, severity S1 (stop-ship) to S4 (cosmetic). Serious issues raise engineering "
+    "changes (ECOs), which move Draft > In review > Approved > Implemented (or Rejected). Implemented changes update the BOM.",
+    "ECO, ECN, change order and engineering change all mean the same thing here. Cycle time = created to implemented.",
+    "mart_bom_current is today's multi-level BOM flattened: system > assembly > part with quantity per vehicle and cost. "
+    "mart_eco_supply_exposure lists parts a pending change will replace or remove, with the stock and buy signal at risk.",
 ]
 
 space = {
@@ -66,12 +87,17 @@ space = {
     "data_sources": {
         "metric_views": sorted([{"identifier": f"{G}.{v}"} for v in [
             "supplier_delivery_metrics", "sourcing_risk_metrics", "inventory_planning_metrics",
-            "forecast_accuracy_metrics", "policy_simulation_metrics"]], key=lambda x: x["identifier"]),
+            "forecast_accuracy_metrics", "policy_simulation_metrics", "engineering_change_metrics",
+            "prototype_issue_metrics"]], key=lambda x: x["identifier"]),
         "tables": sorted([
             {"identifier": f"{G}.mart_buy_signals", "column_configs": sorted([
                 {"column_name": "signal", "enable_format_assistance": True, "enable_entity_matching": True},
                 {"column_name": "buffer_class", "enable_format_assistance": True, "enable_entity_matching": True},
                 {"column_name": "site_id", "enable_format_assistance": True, "enable_entity_matching": True}], key=lambda c: c["column_name"])},
+            {"identifier": f"{G}.mart_eco_supply_exposure"},
+            {"identifier": f"{G}.mart_bom_current", "column_configs": sorted([
+                {"column_name": "system_name", "enable_format_assistance": True, "enable_entity_matching": True},
+                {"column_name": "vehicle_model_id", "enable_format_assistance": True, "enable_entity_matching": True}], key=lambda c: c["column_name"])},
             {"identifier": f"{G}.mart_supplier_scorecard", "column_configs": sorted([
                 {"column_name": "region", "enable_format_assistance": True, "enable_entity_matching": True},
                 {"column_name": "tier", "enable_format_assistance": True, "enable_entity_matching": True}], key=lambda c: c["column_name"])},

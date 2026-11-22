@@ -756,3 +756,254 @@ models:
         combination_of_columns:
         - site_key
         - part_key
+- name: mart_engineering_changes
+  description: One row per engineering change with names and time in each stage.
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: eco_key
+    data_type: string
+    description: Engineering change.
+    constraints:
+    - type: not_null
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('fct_engineering_change')
+          field: eco_key
+  - name: program_key
+    data_type: string
+    description: Vehicle program.
+    data_tests:
+    - relationships:
+        arguments:
+          to: ref('dim_program')
+          field: program_key
+  - name: eco_id
+    data_type: string
+    description: Change id.
+  - name: program_name
+    data_type: string
+    description: Program.
+  - name: vehicle_model_id
+    data_type: string
+    description: PU, SUV or VAN.
+  - name: site_id
+    data_type: string
+    description: Plant.
+  - name: reason
+    data_type: string
+    description: Why the change was raised.
+  - name: priority
+    data_type: string
+    description: High, Medium or Low.
+  - name: component_category
+    data_type: string
+    description: Component category.
+  - name: status
+    data_type: string
+    description: Draft, In review, Approved, Implemented or Rejected.
+  - name: raised_in_phase
+    data_type: string
+    description: EP, VP, PPV or Production.
+  - name: phase_order
+    data_type: int
+    description: 1 EP to 4 Production, for sorting.
+  - name: from_issue
+    data_type: boolean
+    description: Raised to fix an issue.
+  - name: parts_affected
+    data_type: bigint
+    description: Parts the change touches.
+  - name: created_date
+    data_type: date
+    description: Created.
+  - name: implemented_date
+    data_type: date
+    description: Implemented.
+  - name: days_in_draft
+    data_type: int
+    description: Created to submitted, days.
+  - name: days_in_review
+    data_type: int
+    description: Submitted to reviewed, days.
+  - name: days_to_approve
+    data_type: int
+    description: Reviewed to approved, days.
+  - name: days_to_implement
+    data_type: int
+    description: Approved to implemented, days.
+  - name: cycle_time_days
+    data_type: int
+    description: Created to implemented, days.
+  - name: is_open
+    data_type: boolean
+    description: Not implemented or rejected yet.
+  - name: age_days
+    data_type: int
+    description: Days since created.
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - eco_key
+- name: mart_issue_burndown
+  description: 'Weekly issue burndown per program and severity: found, closed, open at week end.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: week_start
+    data_type: date
+    description: Week (monday).
+    constraints:
+    - type: not_null
+    data_tests:
+    - not_null
+  - name: program_key
+    data_type: string
+    description: Vehicle program.
+    constraints:
+    - type: not_null
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_program')
+          field: program_key
+  - name: program_name
+    data_type: string
+    description: Program.
+  - name: severity
+    data_type: string
+    description: S1 to S4.
+    constraints:
+    - type: not_null
+    data_tests:
+    - not_null
+  - name: issues_found
+    data_type: bigint
+    description: Issues found that week.
+  - name: issues_closed
+    data_type: bigint
+    description: Issues closed that week.
+  - name: issues_open
+    data_type: bigint
+    description: Issues open at week end.
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - week_start
+        - program_key
+        - severity
+- name: mart_bom_churn
+  description: BOM parts changed per program and phase. Shows the design freezing as launch nears.
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: program_key
+    data_type: string
+    description: Vehicle program.
+    constraints:
+    - type: not_null
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_program')
+          field: program_key
+  - name: program_name
+    data_type: string
+    description: Program.
+  - name: vehicle_model_id
+    data_type: string
+    description: PU, SUV or VAN.
+  - name: phase
+    data_type: string
+    description: EP, VP, PPV or Production.
+    constraints:
+    - type: not_null
+    data_tests:
+    - not_null
+  - name: phase_order
+    data_type: int
+    description: 1 EP to 4 Production, for sorting.
+  - name: phase_start
+    data_type: date
+    description: Phase start.
+  - name: phase_end
+    data_type: date
+    description: Phase end (start of the next phase).
+  - name: parts_changed
+    data_type: bigint
+    description: BOM parts changed by implemented ECOs in the phase.
+  - name: bom_parts
+    data_type: bigint
+    description: Parts in the model's BOM.
+  - name: bom_churn_rate
+    data_type: double
+    description: Parts changed / BOM parts, 0-1. Late churn is the expensive kind.
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - program_key
+        - phase
+- name: mart_bom_current
+  description: 'Today''s BOM flattened: vehicle model x part with its system and assembly.'
+  config:
+    contract:
+      enforced: true
+  columns:
+  - name: vehicle_model_id
+    data_type: string
+    description: PU, SUV or VAN.
+    constraints:
+    - type: not_null
+    data_tests:
+    - not_null
+  - name: system_name
+    data_type: string
+    description: Top-level system, e.g. Battery pack.
+  - name: assembly_name
+    data_type: string
+    description: Assembly under the system.
+  - name: part_key
+    data_type: string
+    description: Part.
+    constraints:
+    - type: not_null
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_part')
+          field: part_key
+  - name: part_number
+    data_type: string
+    description: Part number.
+  - name: part_name
+    data_type: string
+    description: Part.
+  - name: component_category
+    data_type: string
+    description: Component category.
+  - name: qty_per_vehicle
+    data_type: int
+    description: Quantity in one vehicle (exploded).
+  - name: standard_cost
+    data_type: decimal(18,4)
+    description: Standard unit cost, USD.
+  - name: extended_cost
+    data_type: decimal(18,2)
+    description: qty x standard cost, USD.
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - vehicle_model_id
+        - part_key

@@ -26,6 +26,39 @@
    "asset_name": "workspace.ev_gold.policy_simulation_metrics"
   },
   {
+   "name": "mv_eco",
+   "displayName": "engineering_change_metrics",
+   "asset_name": "workspace.ev_gold.engineering_change_metrics"
+  },
+  {
+   "name": "mv_issues",
+   "displayName": "prototype_issue_metrics",
+   "asset_name": "workspace.ev_gold.prototype_issue_metrics"
+  },
+  {
+   "name": "ds_burndown",
+   "displayName": "Issue burndown",
+   "queryLines": [
+    "SELECT week_start, program_name, severity, issues_open FROM mart_issue_burndown\n"
+   ]
+  },
+  {
+   "name": "ds_churn",
+   "displayName": "BOM churn",
+   "queryLines": [
+    "SELECT program_name, phase, phase_order, bom_churn_rate FROM mart_bom_churn\n"
+   ]
+  },
+  {
+   "name": "ds_exposure",
+   "displayName": "Engineering change exposure",
+   "queryLines": [
+    "SELECT site_id, part_number, part_name, eco_id, eco_status, change_type, signal, on_hand_qty,\n",
+    "       suggested_order_value, stock_at_risk_value, recommended_action\n",
+    "FROM mart_eco_supply_exposure\n"
+   ]
+  },
+  {
    "name": "ds_scorecard",
    "displayName": "Supplier scorecard",
    "queryLines": [
@@ -2533,6 +2566,653 @@
       "y": 23,
       "width": 12,
       "height": 6
+     }
+    }
+   ]
+  },
+  {
+   "name": "product",
+   "displayName": "Product development",
+   "pageType": "PAGE_TYPE_CANVAS",
+   "layoutVersion": "GRID_V1",
+   "layout": [
+    {
+     "widget": {
+      "name": "title-product",
+      "multilineTextboxSpec": {
+       "lines": [
+        "# Product development\nPrototype builds find issues, serious issues raise engineering changes (ECOs), and implemented changes update the BOM. Issues fall as programs mature from EP to PPV, BOM churn drops as the design freezes, and pending changes flag parts that shouldn't be reordered."
+       ]
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-ecos",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "mv_eco",
+         "fields": [
+          {
+           "name": "measure(Changes)",
+           "expression": "MEASURE(`Changes`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Changes)",
+         "displayName": "Engineering changes"
+        }
+       },
+       "frame": {
+        "title": "Engineering changes",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 2,
+      "width": 3,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-open-ecos",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "mv_eco",
+         "fields": [
+          {
+           "name": "measure(Open Changes)",
+           "expression": "MEASURE(`Open Changes`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Open Changes)",
+         "displayName": "Open changes"
+        }
+       },
+       "frame": {
+        "title": "Open changes",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 3,
+      "y": 2,
+      "width": 3,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-cycle",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "mv_eco",
+         "fields": [
+          {
+           "name": "measure(Avg Cycle Time Days)",
+           "expression": "MEASURE(`Avg Cycle Time Days`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Avg Cycle Time Days)",
+         "displayName": "Avg change cycle time (days)",
+         "format": {
+          "type": "number-plain",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        }
+       },
+       "frame": {
+        "title": "Avg change cycle time (days)",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 6,
+      "y": 2,
+      "width": 3,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-issues",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "mv_issues",
+         "fields": [
+          {
+           "name": "measure(Issues)",
+           "expression": "MEASURE(`Issues`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Issues)",
+         "displayName": "Issues found"
+        }
+       },
+       "frame": {
+        "title": "Issues found",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 9,
+      "y": 2,
+      "width": 3,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "issues-phase",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "mv_issues",
+         "fields": [
+          {
+           "name": "Found Phase",
+           "expression": "`Found Phase`"
+          },
+          {
+           "name": "measure(Issues)",
+           "expression": "MEASURE(`Issues`)"
+          },
+          {
+           "name": "Severity",
+           "expression": "`Severity`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "Found Phase",
+         "scale": {
+          "type": "categorical",
+          "sort": {
+           "by": "custom-order",
+           "orderedValues": [
+            "EP",
+            "VP",
+            "PPV",
+            "Production"
+           ]
+          }
+         },
+         "displayName": "Found Phase"
+        },
+        "y": {
+         "scale": {
+          "type": "quantitative"
+         },
+         "fieldName": "measure(Issues)",
+         "displayName": "Issues"
+        },
+        "color": {
+         "fieldName": "Severity",
+         "scale": {
+          "type": "categorical",
+          "mappings": [
+           {
+            "value": "S1",
+            "color": "#E15759"
+           },
+           {
+            "value": "S2",
+            "color": "#F28E2C"
+           },
+           {
+            "value": "S3",
+            "color": "#EDC948"
+           },
+           {
+            "value": "S4",
+            "color": "#9AA5B1"
+           }
+          ]
+         },
+         "displayName": "Severity"
+        }
+       },
+       "frame": {
+        "title": "Issues by phase and severity",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 5,
+      "width": 6,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "eco-stages",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "mv_eco",
+         "fields": [
+          {
+           "name": "Raised In Phase",
+           "expression": "`Raised In Phase`"
+          },
+          {
+           "name": "measure(Avg Days In Review)",
+           "expression": "MEASURE(`Avg Days In Review`)"
+          },
+          {
+           "name": "measure(Avg Days To Approve)",
+           "expression": "MEASURE(`Avg Days To Approve`)"
+          },
+          {
+           "name": "measure(Avg Days To Implement)",
+           "expression": "MEASURE(`Avg Days To Implement`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "Raised In Phase",
+         "scale": {
+          "type": "categorical",
+          "sort": {
+           "by": "custom-order",
+           "orderedValues": [
+            "EP",
+            "VP",
+            "PPV",
+            "Production"
+           ]
+          }
+         },
+         "displayName": "Raised In Phase"
+        },
+        "y": {
+         "scale": {
+          "type": "quantitative"
+         },
+         "fields": [
+          {
+           "fieldName": "measure(Avg Days In Review)",
+           "displayName": "Review"
+          },
+          {
+           "fieldName": "measure(Avg Days To Approve)",
+           "displayName": "Approval"
+          },
+          {
+           "fieldName": "measure(Avg Days To Implement)",
+           "displayName": "Implementation"
+          }
+         ],
+         "format": {
+          "type": "number-plain",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        }
+       },
+       "frame": {
+        "title": "Where engineering change time goes, by phase raised",
+        "showTitle": true,
+        "showDescription": true,
+        "description": "Average days per stage. Implementation is mostly tooling and supplier lead time."
+       }
+      }
+     },
+     "position": {
+      "x": 6,
+      "y": 5,
+      "width": 6,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "burndown",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_burndown",
+         "fields": [
+          {
+           "name": "weekly(week_start)",
+           "expression": "DATE_TRUNC(\"WEEK\", `week_start`)"
+          },
+          {
+           "name": "sum(issues_open)",
+           "expression": "SUM(`issues_open`)"
+          },
+          {
+           "name": "program_name",
+           "expression": "`program_name`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "line",
+       "encodings": {
+        "x": {
+         "fieldName": "weekly(week_start)",
+         "scale": {
+          "type": "temporal"
+         },
+         "displayName": "Week"
+        },
+        "y": {
+         "scale": {
+          "type": "quantitative"
+         },
+         "fieldName": "sum(issues_open)",
+         "displayName": "Open issues"
+        },
+        "color": {
+         "fieldName": "program_name",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "program_name"
+        }
+       },
+       "frame": {
+        "title": "Open issues by program",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 11,
+      "width": 8,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "churn",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_churn",
+         "fields": [
+          {
+           "name": "phase",
+           "expression": "`phase`"
+          },
+          {
+           "name": "sum(bom_churn_rate)",
+           "expression": "SUM(`bom_churn_rate`)"
+          },
+          {
+           "name": "program_name",
+           "expression": "`program_name`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "phase",
+         "scale": {
+          "type": "categorical",
+          "sort": {
+           "by": "custom-order",
+           "orderedValues": [
+            "EP",
+            "VP",
+            "PPV",
+            "Production"
+           ]
+          }
+         },
+         "displayName": "phase"
+        },
+        "y": {
+         "scale": {
+          "type": "quantitative"
+         },
+         "fieldName": "sum(bom_churn_rate)",
+         "displayName": "Share of BOM changed",
+         "format": {
+          "type": "number-percent",
+          "decimalPlaces": {
+           "type": "max",
+           "places": 1
+          }
+         }
+        },
+        "color": {
+         "fieldName": "program_name",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "program_name"
+        }
+       },
+       "frame": {
+        "title": "BOM churn by phase",
+        "showTitle": true,
+        "showDescription": true,
+        "description": "Share of each program's BOM changed in each phase. It falls as the design freezes for launch."
+       },
+       "mark": {
+        "layout": "group"
+       }
+      }
+     },
+     "position": {
+      "x": 8,
+      "y": 11,
+      "width": 4,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "exposure",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_exposure",
+         "fields": [
+          {
+           "name": "site_id",
+           "expression": "`site_id`"
+          },
+          {
+           "name": "part_number",
+           "expression": "`part_number`"
+          },
+          {
+           "name": "part_name",
+           "expression": "`part_name`"
+          },
+          {
+           "name": "eco_id",
+           "expression": "`eco_id`"
+          },
+          {
+           "name": "eco_status",
+           "expression": "`eco_status`"
+          },
+          {
+           "name": "change_type",
+           "expression": "`change_type`"
+          },
+          {
+           "name": "signal",
+           "expression": "`signal`"
+          },
+          {
+           "name": "stock_at_risk_value",
+           "expression": "`stock_at_risk_value`"
+          },
+          {
+           "name": "recommended_action",
+           "expression": "`recommended_action`"
+          }
+         ],
+         "disaggregated": true,
+         "orders": [
+          {
+           "direction": "DESC",
+           "expression": "`stock_at_risk_value`"
+          }
+         ]
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "site_id",
+          "displayName": "Site"
+         },
+         {
+          "fieldName": "part_number",
+          "displayName": "Part #"
+         },
+         {
+          "fieldName": "part_name",
+          "displayName": "Part"
+         },
+         {
+          "fieldName": "eco_id",
+          "displayName": "ECO"
+         },
+         {
+          "fieldName": "eco_status",
+          "displayName": "ECO status"
+         },
+         {
+          "fieldName": "change_type",
+          "displayName": "Change"
+         },
+         {
+          "fieldName": "signal",
+          "displayName": "Buy signal"
+         },
+         {
+          "fieldName": "stock_at_risk_value",
+          "displayName": "Stock at risk",
+          "format": {
+           "type": "number-currency",
+           "currencyCode": "USD",
+           "abbreviation": "compact",
+           "decimalPlaces": {
+            "type": "max",
+            "places": 1
+           }
+          }
+         },
+         {
+          "fieldName": "recommended_action",
+          "displayName": "Action"
+         }
+        ]
+       },
+       "frame": {
+        "title": "Parts being superseded by a pending engineering change",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 17,
+      "width": 12,
+      "height": 7
      }
     }
    ]

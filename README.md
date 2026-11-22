@@ -37,6 +37,19 @@ flowchart LR
 Spark notebooks stand in for the source systems (erp, mes, wms) and the ml / simulation jobs, and land everything
 in bronze. dbt owns everything after that. The simulations read gold and write back to bronze, so dbt runs twice.
 
+## Product development
+
+A PLM source (product lifecycle management) adds the side of the business before volume production: vehicle
+programs, prototype builds (EP, VP, PPV), a multi-level engineering BOM with history, issues found in builds, and
+engineering changes (ECOs) that fix them and update the BOM.
+
+- **ecos are an accumulating snapshot** - one row per change, a date per milestone, so cycle time per stage is a column
+- **the bom explodes recursively** for any date, so "what was in the vehicle at build VP1" is a query
+- **engineering and manufacturing boms are reconciled by a test** - today's engineering bom must explode to exactly the
+  flat bom purchasing plans with. that test caught an id collision the first time
+- **pending changes flag supply risk** - parts a pending change will replace or remove show up next to their buy
+  signal and stock, so nobody reorders a part that's about to be superseded
+
 ## Data model
 
 Kimball style - conformed dimensions, one grain per fact, marts on top. Full detail in [docs/data_model.md](docs/data_model.md).
@@ -49,6 +62,8 @@ Kimball style - conformed dimensions, one grain per fact, marts on top. Full det
 | `fct_inventory_snapshot` | snapshot date x site x part | x | x | | x | | | |
 | `fct_forecast` | run x series x origin week x target week | x | x | x | x | | x | |
 | `fct_policy_simulation` | policy x site x part x day | x | x | | x | | | x |
+| `fct_engineering_change` | one engineering change | x | | | x | | | |
+| `fct_issue` | one issue from a prototype build or production | x | | | x | | | |
 
 A few things that took some thought:
 
@@ -66,7 +81,7 @@ A few things that took some thought:
 ## Testing
 
 - every dimension, bridge, fact and mart has an enforced contract (column types), named primary and foreign keys in
-  unity catalog, a grain test and relationship tests. about 160 tests run on every build
+  unity catalog, a grain test and relationship tests. about 220 tests run on every build
 - a unit test on the supplier tier logic
 - ci builds everything into separate `ci_` schemas on every pull request
 

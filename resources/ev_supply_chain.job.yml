@@ -35,6 +35,11 @@ resources:
           environment_key: spark
           notebook_task: {notebook_path: ../notebooks/03_production.py}
 
+        - task_key: product_development
+          depends_on: [{task_key: production}]
+          environment_key: spark
+          notebook_task: {notebook_path: ../notebooks/05_product_development.py}
+
         - task_key: purchasing
           depends_on: [{task_key: production}]
           environment_key: spark
@@ -51,7 +56,7 @@ resources:
           notebook_task: {notebook_path: ../notebooks/07_forecast.py}
 
         - task_key: dbt_build
-          depends_on: [{task_key: forecast}]
+          depends_on: [{task_key: forecast}, {task_key: product_development}]
           environment_key: dbt
           dbt_task:
             project_directory: ../dbt

@@ -27,6 +27,18 @@
     ]
    },
    {
+    "id": "63b994cde7b92f72ea66e7d6306015f0",
+    "question": [
+     "Which parts are we holding that a pending engineering change will supersede?"
+    ]
+   },
+   {
+    "id": "79518f816a22aa73b6d858e03db57090",
+    "question": [
+     "Where does engineering change cycle time go?"
+    ]
+   },
+   {
     "id": "7fab083159325780a0cb23c7a45c1070",
     "question": [
      "Which suppliers are getting worse?"
@@ -43,6 +55,9 @@
  "data_sources": {
   "metric_views": [
    {
+    "identifier": "workspace.ev_gold.engineering_change_metrics"
+   },
+   {
     "identifier": "workspace.ev_gold.forecast_accuracy_metrics"
    },
    {
@@ -52,6 +67,9 @@
     "identifier": "workspace.ev_gold.policy_simulation_metrics"
    },
    {
+    "identifier": "workspace.ev_gold.prototype_issue_metrics"
+   },
+   {
     "identifier": "workspace.ev_gold.sourcing_risk_metrics"
    },
    {
@@ -59,6 +77,21 @@
    }
   ],
   "tables": [
+   {
+    "identifier": "workspace.ev_gold.mart_bom_current",
+    "column_configs": [
+     {
+      "column_name": "system_name",
+      "enable_format_assistance": true,
+      "enable_entity_matching": true
+     },
+     {
+      "column_name": "vehicle_model_id",
+      "enable_format_assistance": true,
+      "enable_entity_matching": true
+     }
+    ]
+   },
    {
     "identifier": "workspace.ev_gold.mart_buy_signals",
     "column_configs": [
@@ -78,6 +111,9 @@
       "enable_entity_matching": true
      }
     ]
+   },
+   {
+    "identifier": "workspace.ev_gold.mart_eco_supply_exposure"
    },
    {
     "identifier": "workspace.ev_gold.mart_supplier_scorecard",
@@ -111,7 +147,11 @@
      "Buy signals: EXPEDITE = on hand below safety stock, ORDER = inventory position below the reorder point, EXCESS = over twice the max. DRR = daily run rate (forecast average daily usage).",
      "The chip shortage ran June 2021 to December 2022, worst around April 2022. It shows up in Electronics by Order Month.",
      "Ordering policies were simulated over the last 52 weeks with the same demand and late deliveries: Current, Lean, High service, EOQ, DDMRP, MRP (schedule). Lead with Stockout Rate (share of parts that ran out at least once) and Total Cost; unit fill rate always looks high because cheap high-volume parts dominate it.",
-     "Forecast accuracy compares LightGBM with a naive baseline. Lower WAPE is better. 'This year' means calendar 2026."
+     "Forecast accuracy compares LightGBM with a naive baseline. Lower WAPE is better. 'This year' means calendar 2026.",
+     "Product development: each vehicle program goes through prototype build phases EP (engineering prototype), VP (validation prototype) and PPV (pre-production), then SOP (start of production). Programs: Pickup launch, SUV launch, Delivery van launch, SUV plant 2 launch.",
+     "Issues are found in prototype builds and production, severity S1 (stop-ship) to S4 (cosmetic). Serious issues raise engineering changes (ECOs), which move Draft > In review > Approved > Implemented (or Rejected). Implemented changes update the BOM.",
+     "ECO, ECN, change order and engineering change all mean the same thing here. Cycle time = created to implemented.",
+     "mart_bom_current is today's multi-level BOM flattened: system > assembly > part with quantity per vehicle and cost. mart_eco_supply_exposure lists parts a pending change will replace or remove, with the stock and buy signal at risk."
     ]
    }
   ],
@@ -123,6 +163,24 @@
     ],
     "sql": [
      "SELECT `Order Month`, MEASURE(`Avg Lead Time Days`) AS avg_lead_time_days, MEASURE(`On-Time Rate`) AS on_time_rate\nFROM workspace.ev_gold.supplier_delivery_metrics WHERE `Component Category` = 'Electronics' GROUP BY ALL ORDER BY `Order Month`"
+    ]
+   },
+   {
+    "id": "3af4f439f5cbb0719858423ca520af9d",
+    "question": [
+     "How do issues fall as a program matures?"
+    ],
+    "sql": [
+     "SELECT `Program`, `Found Phase`, MEASURE(`Issues`) AS issues, MEASURE(`ECO Conversion Rate`) AS issue_to_change_rate\nFROM workspace.ev_gold.prototype_issue_metrics GROUP BY ALL ORDER BY `Program`, `Found Phase`"
+    ]
+   },
+   {
+    "id": "3ce30ced498305046d1d9f3004074379",
+    "question": [
+     "Where does engineering change cycle time go, by phase raised?"
+    ],
+    "sql": [
+     "SELECT `Raised In Phase`, MEASURE(`Changes`) AS changes, MEASURE(`Avg Days In Review`) AS review_days,\n       MEASURE(`Avg Days To Approve`) AS approve_days, MEASURE(`Avg Days To Implement`) AS implement_days,\n       MEASURE(`Avg Cycle Time Days`) AS cycle_time_days\nFROM workspace.ev_gold.engineering_change_metrics GROUP BY ALL ORDER BY `Raised In Phase`"
     ]
    },
    {
@@ -177,6 +235,15 @@
     ],
     "sql": [
      "SELECT `Site`, `Policy`, MEASURE(`Total Cost`) AS total_cost, MEASURE(`Stockout Rate`) AS stockout_rate,\n       MEASURE(`Avg Inventory Value`) AS avg_inventory_value\nFROM workspace.ev_gold.policy_simulation_metrics GROUP BY ALL ORDER BY `Site`, total_cost"
+    ]
+   },
+   {
+    "id": "edc7031513f91855cad8590e8fb8468c",
+    "question": [
+     "Which parts are we holding that a pending engineering change will supersede?"
+    ],
+    "sql": [
+     "SELECT site_id, part_number, part_name, eco_id, eco_status, change_type, signal, stock_at_risk_value, recommended_action\nFROM workspace.ev_gold.mart_eco_supply_exposure ORDER BY stock_at_risk_value DESC LIMIT 25"
     ]
    }
   ]

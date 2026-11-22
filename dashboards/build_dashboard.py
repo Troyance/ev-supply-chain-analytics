@@ -17,6 +17,16 @@ datasets = [
     metric_view("mv_planning", "inventory_planning_metrics"),
     metric_view("mv_accuracy", "forecast_accuracy_metrics"),
     metric_view("mv_policy", "policy_simulation_metrics"),
+    metric_view("mv_eco", "engineering_change_metrics"),
+    metric_view("mv_issues", "prototype_issue_metrics"),
+    {"name": "ds_burndown", "displayName": "Issue burndown",
+     "queryLines": sql("SELECT week_start, program_name, severity, issues_open FROM mart_issue_burndown")},
+    {"name": "ds_churn", "displayName": "BOM churn",
+     "queryLines": sql("SELECT program_name, phase, phase_order, bom_churn_rate FROM mart_bom_churn")},
+    {"name": "ds_exposure", "displayName": "Engineering change exposure",
+     "queryLines": sql("SELECT site_id, part_number, part_name, eco_id, eco_status, change_type, signal, on_hand_qty,",
+                       "       suggested_order_value, stock_at_risk_value, recommended_action",
+                       "FROM mart_eco_supply_exposure")},
     {"name": "ds_scorecard", "displayName": "Supplier scorecard",
      "queryLines": sql("SELECT supplier_name, country, region, tier, spend, on_time_rate, on_time_rate_prior_12m,",
                        "       on_time_rate_last_12m, lateness_trend_days_per_month, is_declining",
@@ -235,6 +245,40 @@ policies = [
           "Next 13 weeks from today's stock (current policy)", pos(0, 23, 12, 6), x_type="temporal", x_name="Day"),
 ]
 
+# ---------- page 5: product development ----------
+PHASES = {"sort": {"by": "custom-order", "orderedValues": ["EP", "VP", "PPV", "Production"]}}
+SEV_COLORS = [{"value": "S1", "color": BAD}, {"value": "S2", "color": WARN}, {"value": "S3", "color": "#EDC948"}, {"value": "S4", "color": MUTED}]
+product = [
+    text("title-product", "# Product development\nPrototype builds find issues, serious issues raise engineering changes (ECOs), and implemented "
+         "changes update the BOM. Issues fall as programs mature from EP to PPV, BOM churn drops as the design freezes, and pending "
+         "changes flag parts that shouldn't be reordered.", pos(0, 0, 12, 2)),
+    counter("kpi-ecos", "mv_eco", "Changes", "Engineering changes", pos(0, 2, 3, 3)),
+    counter("kpi-open-ecos", "mv_eco", "Open Changes", "Open changes", pos(3, 2, 3, 3)),
+    counter("kpi-cycle", "mv_eco", "Avg Cycle Time Days", "Avg change cycle time (days)", pos(6, 2, 3, 3), NUM),
+    counter("kpi-issues", "mv_issues", "Issues", "Issues found", pos(9, 2, 3, 3)),
+    chart("issues-phase", "bar", "mv_issues", "Found Phase", [(m("Issues"), "Issues")], "Issues by phase and severity",
+          pos(0, 5, 6, 6), color="Severity", mappings=SEV_COLORS),
+    chart("eco-stages", "bar", "mv_eco", "Raised In Phase",
+          [(m("Avg Days In Review"), "Review"), (m("Avg Days To Approve"), "Approval"), (m("Avg Days To Implement"), "Implementation")],
+          "Where engineering change time goes, by phase raised", pos(6, 5, 6, 6), fmt=NUM,
+          desc="Average days per stage. Implementation is mostly tooling and supplier lead time."),
+    chart("burndown", "line", "ds_burndown", ("weekly(week_start)", 'DATE_TRUNC("WEEK", `week_start`)'),
+          [(f("sum(issues_open)", "SUM(`issues_open`)"), "Open issues")], "Open issues by program", pos(0, 11, 8, 6),
+          color="program_name", x_type="temporal", x_name="Week"),
+    chart("churn", "bar", "ds_churn", "phase", [(f("sum(bom_churn_rate)", "SUM(`bom_churn_rate`)"), "Share of BOM changed")],
+          "BOM churn by phase", pos(8, 11, 4, 6), color="program_name", fmt=PCT, extra={"mark": {"layout": "group"}},
+          desc="Share of each program's BOM changed in each phase. It falls as the design freezes for launch."),
+    table("exposure", "ds_exposure", [
+        ("site_id", "Site"), ("part_number", "Part #"), ("part_name", "Part"), ("eco_id", "ECO"), ("eco_status", "ECO status"),
+        ("change_type", "Change"), ("signal", "Buy signal"), ("stock_at_risk_value", "Stock at risk", USD),
+        ("recommended_action", "Action")],
+        "Parts being superseded by a pending engineering change", pos(0, 17, 12, 7),
+        orders=[{"direction": "DESC", "expression": "`stock_at_risk_value`"}]),
+]
+product[5]["widget"]["spec"]["encodings"]["x"]["scale"].update(PHASES)
+product[6]["widget"]["spec"]["encodings"]["x"]["scale"].update(PHASES)
+product[8]["widget"]["spec"]["encodings"]["x"]["scale"].update(PHASES)
+
 # ---------- global filters ----------
 filters = {"name": "filters", "displayName": "Filters", "pageType": "PAGE_TYPE_GLOBAL_FILTERS", "layoutVersion": "GRID_V1", "layout": [
     filt("filter-region", "filter-multi-select", "Supplier region",
@@ -251,7 +295,8 @@ filters = {"name": "filters", "displayName": "Filters", "pageType": "PAGE_TYPE_G
 dashboard = {
     "datasets": datasets,
     "pages": [page("suppliers", "Suppliers", suppliers), page("risk", "Sourcing risk", risk),
-              page("planning", "Forecast & buy signals", planning), page("policies", "Ordering policies", policies), filters],
+              page("planning", "Forecast & buy signals", planning), page("policies", "Ordering policies", policies),
+              page("product", "Product development", product), filters],
     "uiSettings": {"theme": {
         "canvasBackgroundColor": {"light": "#F7F8FA", "dark": "#1B2128"},
         "widgetBackgroundColor": {"light": "#FFFFFF", "dark": "#11171C"},
