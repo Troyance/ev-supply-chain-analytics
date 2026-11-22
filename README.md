@@ -14,12 +14,15 @@ in 2021-22 and a second plant that's still ramping up.
 
 ```mermaid
 flowchart LR
+    nhtsa[nhtsa recall file] -->|landing script| vol[(landing volume)]
     subgraph bronze [ev_bronze - spark]
         tpch[tpch supplier master]
-        gen[production, purchasing,<br/>planning generators]
+        gen[production, purchasing,<br/>plm, planning generators]
+        al[auto loader]
         ml[lightgbm forecasts]
         sim[sawtooth + policy<br/>simulations]
     end
+    vol --> al --> stg
     subgraph dbt [dbt]
         stg[ev_staging<br/>stg_ views]
         silver[ev_silver<br/>dims, bridges, facts]
@@ -34,8 +37,9 @@ flowchart LR
     gold --> genie[genie agent]
 ```
 
-Spark notebooks stand in for the source systems (erp, mes, wms) and the ml / simulation jobs, and land everything
-in bronze. dbt owns everything after that. The simulations read gold and write back to bronze, so dbt runs twice.
+Spark notebooks stand in for the source systems (erp, mes, plm, wms) and the ml / simulation jobs, and land
+everything in bronze. One real source (nhtsa recalls) arrives as files and is ingested by auto loader. dbt owns
+everything after bronze. The simulations read gold and write back to bronze, so dbt runs twice.
 
 ## Product development
 
@@ -79,6 +83,7 @@ Kimball style - conformed dimensions, one grain per fact, marts on top. Full det
 | `fct_policy_simulation` | policy x site x part x day | x | x | | x | | | x |
 | `fct_engineering_change` | one engineering change | x | | | x | | | |
 | `fct_issue` | one issue from a prototype build or production | x | | | x | | | |
+| `fct_recall_campaign` | one real nhtsa recall campaign | x | | | | | | |
 
 A few things that took some thought:
 
@@ -96,8 +101,11 @@ A few things that took some thought:
 ## Testing
 
 - every dimension, bridge, fact and mart has an enforced contract (column types), named primary and foreign keys in
-  unity catalog, a grain test and relationship tests. about 220 tests run on every build
+  unity catalog, a grain test and relationship tests. about 245 tests run on every build
+- reconciliation tests: the engineering bom must explode to exactly the manufacturing bom, and deliveries must match
+  demand per part over its history
 - a unit test on the supplier tier logic
+- tests on the real nhtsa data warn instead of fail, so one odd public record can't block the pipeline
 - ci builds everything into separate `ci_` schemas on every pull request
 
 ## Semantic layer
@@ -109,7 +117,8 @@ Ratios are always sum / sum, never averaged. The dashboard and the genie agent b
 
 - **suppliers** - asia is about 4x slower than north america, electronics fell apart during the chip shortage, and
   the declining flag picks out all 11 secretly slipping suppliers with no false alarms
-- **sourcing risk** - battery materials carry most of the spend that depends on unreliable suppliers
+- **sourcing risk** - battery materials carry most of the spend that depends on unreliable suppliers, and late
+  suppliers are also lower quality (tier c averages 1.6x the supplier-caused issues of tier a)
 - **forecast** - lightgbm (m5 style: one global model, direct multi-horizon, tweedie for lumpy service parts) gets
   build forecasts to 7.5% wape vs 18.3% for the naive baseline
 - **ordering policies** - six policies replayed on a year of real demand. at a steady plant, carrying more safety
@@ -120,9 +129,11 @@ Ratios are always sum / sum, never averaged. The dashboard and the genie agent b
 
 ## Running it
 
-Everything runs as one Databricks job, defined in `databricks.yml`:
+Everything runs as one Databricks job, defined in `databricks.yml`. The nhtsa file is landed first, from anywhere
+with internet access (serverless compute here has none):
 
 ```bash
+./scripts/land_nhtsa_recalls.sh     # drops the latest recall snapshot into the landing volume
 databricks bundle deploy
 databricks bundle run ev_supply_chain
 ```
@@ -132,5 +143,5 @@ For local dbt work: `./dbt.sh build` (reads your token from `~/.databrickscfg`).
 
 ## Stack
 
-Databricks (serverless, unity catalog, delta, ai/bi dashboards, genie, mlflow) · dbt core with dbt-databricks ·
-pyspark · lightgbm · github actions
+Databricks (serverless, unity catalog, volumes, auto loader, delta, metric views, ai/bi dashboards, genie, mlflow,
+asset bundles) · dbt core with dbt-databricks · pyspark · lightgbm · github actions
