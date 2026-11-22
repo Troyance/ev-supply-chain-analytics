@@ -1,5 +1,7 @@
 # ev-supply-chain-analytics
 
+[![ci](https://github.com/Troyance/ev-supply-chain-analytics/actions/workflows/ci.yml/badge.svg)](https://github.com/Troyance/ev-supply-chain-analytics/actions/workflows/ci.yml)
+
 Side project for getting hands-on with Databricks, dbt and supply chain planning. It models a made-up EV maker:
 three vehicle models built at two plants, about 1,900 parts, about 800 suppliers and a service parts DC - from
 purchase orders all the way to forecasts, buy signals and a comparison of ordering policies.
